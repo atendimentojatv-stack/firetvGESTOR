@@ -24,8 +24,14 @@
       }
     }
     </script>
+    <style>
+        /* Animações suaves */
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    </style>
 </head>
-<body class="bg-slate-950 text-white">
+<body class="bg-slate-950 text-white font-sans">
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
@@ -60,8 +66,12 @@
           Tv, LayoutDashboard, LogOut, Plus, Search, UserPlus, Shield, 
           Trash2, Edit, CheckCircle, XCircle, Calendar, Zap, TrendingUp, 
           Smartphone, Globe, Settings, RefreshCw, MessageCircle, Filter, 
-          AlertTriangle, DollarSign, Lock, Unlock, Eye, EyeOff, Clock, Ban
+          AlertTriangle, DollarSign, Lock, Unlock, Eye, EyeOff, Clock, Ban,
+          Save, Copy, Share2, FileText, Info
         } from 'lucide-react';
+
+        // --- CONFIGURAÇÕES PADRÃO ---
+        const CEO_PHONE_DEFAULT = "5521967613543"; 
 
         // --- ERROR BOUNDARY ---
         class ErrorBoundary extends React.Component {
@@ -69,21 +79,14 @@
             super(props);
             this.state = { hasError: false, error: null };
           }
-          static getDerivedStateFromError(error) {
-            return { hasError: true, error };
-          }
-          componentDidCatch(error, errorInfo) {
-            console.error("Erro capturado:", error, errorInfo);
-          }
+          static getDerivedStateFromError(error) { return { hasError: true, error }; }
+          componentDidCatch(error, errorInfo) { console.error("Erro:", error, errorInfo); }
           render() {
             if (this.state.hasError) {
               return (
                 <div className="min-h-screen bg-red-900 text-white flex flex-col items-center justify-center p-4 text-center">
-                  <h1 className="text-3xl font-bold mb-4">Opa! Ocorreu um erro.</h1>
-                  <p className="mb-4">Tente recarregar a página.</p>
-                  <button onClick={() => window.location.reload()} className="px-6 py-3 bg-white text-red-900 font-bold rounded-lg hover:bg-gray-200">
-                    Recarregar Página
-                  </button>
+                  <h1 className="text-2xl font-bold mb-4">Erro no Sistema</h1>
+                  <button onClick={() => window.location.reload()} className="px-6 py-2 bg-white text-red-900 rounded font-bold">Recarregar</button>
                 </div>
               );
             }
@@ -91,7 +94,7 @@
           }
         }
 
-        // --- CONFIGURAÇÃO DO FIREBASE ---
+        // --- FIREBASE ---
        const firebaseConfig = {
   apiKey: "AIzaSyClcK67ZPEC-4uky5y6RIYCyKF4BqO3xcE",
   authDomain: "firetv-gestor.firebaseapp.com",
@@ -100,20 +103,22 @@
   messagingSenderId: "345143716576",
   appId: "1:345143716576:web:bc9837700de2dc21a8fe85"
 };
+
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'firetv-production';
         
-        // Helpers
         const getUsersCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'users');
         const getClientsCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'clients');
+        const getSettingsDoc = () => doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
 
         // --- UTILITÁRIOS ---
         const formatDate = (val) => {
           try {
             if (!val) return '-';
-            const date = typeof val === 'object' && val.toDate ? val.toDate() : new Date(val); 
+            // Garante que a data seja interpretada corretamente independente do formato
+            const date = typeof val === 'object' && val.toDate ? val.toDate() : new Date(val + 'T12:00:00'); 
             if (isNaN(date.getTime())) return '-';
             return new Intl.DateTimeFormat('pt-BR').format(date);
           } catch (e) { return '-'; }
@@ -155,6 +160,24 @@
           }
         };
 
+        const generateWhatsAppMessage = (client) => {
+            if (!client) return "";
+            const { status, days } = getClientStatus(client.dueDate);
+            let message = `Olá *${client.name}*, tudo bem? Aqui é do *Fire TV*.\n\n`;
+            
+            if (status === 'expired') {
+                message += `⚠️ *SEU PLANO ESTÁ VENCIDO* há ${Math.abs(days)} dias.\nEvite o corte do sinal, renove agora mesmo!`;
+            } else if (status === 'today') {
+                message += `⚠️ *ATENÇÃO:* Seu plano vence *HOJE*.\nGaranta a renovação para não perder a programação.`;
+            } else if (status === 'expiring') {
+                message += `⏳ Seu plano vence em apenas *${days} dias* (${formatDate(client.dueDate)}).\nQue tal já deixar renovado?`;
+            } else {
+                message += `✅ Seu plano está ativo até *${formatDate(client.dueDate)}*.\nAgradecemos a preferência!`;
+            }
+            
+            return encodeURIComponent(message);
+        };
+
         // --- COMPONENTES ---
 
         const LandingPage = ({ onLogin, onRegister }) => (
@@ -183,11 +206,29 @@
         const AuthModal = ({ isOpen, onClose, type, onAuthSuccess }) => {
           const [email, setEmail] = useState('');
           const [password, setPassword] = useState('');
+          const [whatsapp, setWhatsapp] = useState('');
+          const [verificationCode, setVerificationCode] = useState('');
           const [loading, setLoading] = useState(false);
           const [error, setError] = useState('');
           const [showPassword, setShowPassword] = useState(false);
+          const [systemCode, setSystemCode] = useState('777'); 
 
           if (!isOpen) return null;
+
+          React.useEffect(() => {
+              if (type === 'register') {
+                  getDoc(getSettingsDoc()).then(snap => {
+                      if (snap.exists() && snap.data().activationCode) {
+                          setSystemCode(snap.data().activationCode);
+                      }
+                  });
+              }
+          }, [type]);
+
+          const openWhatsAppForCode = () => {
+              const text = `Olá! Quero testar o FireTV. Meu email é ${email}. Poderia me enviar o código de verificação?`;
+              window.open(`https://wa.me/${CEO_PHONE_DEFAULT}?text=${encodeURIComponent(text)}`, '_blank');
+          };
 
           const fetchAndLogin = async (emailToFetch, passwordCheck = null) => {
              const usersRef = getUsersCollection();
@@ -205,6 +246,7 @@
                  const newUser = {
                     uid: auth.currentUser?.uid || crypto.randomUUID(),
                     email: emailToFetch,
+                    whatsapp: whatsapp || '',
                     role: isCeo ? 'ceo' : 'reseller',
                     parentId: 'system',
                     createdAt: serverTimestamp(),
@@ -223,14 +265,35 @@
             e.preventDefault();
             setLoading(true);
             setError('');
+
+            if (type === 'register') {
+                // Busca o código mais recente
+                const settingsSnap = await getDoc(getSettingsDoc());
+                const currentActiveCode = settingsSnap.exists() ? settingsSnap.data().activationCode : '777';
+
+                if (verificationCode !== currentActiveCode) {
+                    setError("Código de verificação inválido. Peça no WhatsApp.");
+                    setLoading(false);
+                    return;
+                }
+                if (whatsapp.length < 8) {
+                    setError("Digite um número de WhatsApp válido.");
+                    setLoading(false);
+                    return;
+                }
+            }
+
             try {
               if (type === 'register') {
                 try {
                     await createUserWithEmailAndPassword(auth, email, password);
                     const userData = await fetchAndLogin(email); 
+                    if (!userData.whatsapp && whatsapp) {
+                        await updateDoc(doc(getUsersCollection(), userData.id), { whatsapp });
+                    }
                     onAuthSuccess(userData);
                 } catch (realAuthErr) {
-                    if (realAuthErr.code === 'auth/operation-not-allowed' || realAuthErr.code === 'auth/internal-error' || String(realAuthErr).includes('api-key')) {
+                    if (String(realAuthErr).includes('operation-not-allowed') || String(realAuthErr).includes('internal-error') || String(realAuthErr).includes('api-key')) {
                         const usersRef = getUsersCollection();
                         const q = query(usersRef, where('email', '==', email));
                         const snap = await getDocs(q);
@@ -239,14 +302,15 @@
                         let userData = {};
                         const isCeo = email === 'admin@firetv.com';
                         const expirationDate = new Date(); expirationDate.setDate(expirationDate.getDate() + (isCeo ? 3650 : 7));
+
                         if (!snap.empty && snap.docs[0].data().isInvite) {
                             const docId = snap.docs[0].id;
-                            userData = { ...snap.docs[0].data(), password, isInvite: false, lastLogin: serverTimestamp() };
+                            userData = { ...snap.docs[0].data(), password, whatsapp, isInvite: false, lastLogin: serverTimestamp() };
                             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', docId), userData);
                             userData.id = docId;
                         } else {
                             userData = {
-                                uid: crypto.randomUUID(), email, password, role: isCeo ? 'ceo' : 'reseller',
+                                uid: crypto.randomUUID(), email, password, whatsapp, role: isCeo ? 'ceo' : 'reseller',
                                 parentId: 'system', createdAt: serverTimestamp(), name: email.split('@')[0],
                                 status: 'active', plan: isCeo ? 'unlimited' : 'trial',
                                 panelExpiration: expirationDate.toISOString()
@@ -263,7 +327,7 @@
                     const userData = await fetchAndLogin(email);
                     onAuthSuccess(userData);
                 } catch (realAuthErr) {
-                    if (realAuthErr.code === 'auth/operation-not-allowed' || realAuthErr.code === 'auth/internal-error' || String(realAuthErr).includes('api-key') || realAuthErr.code === 'auth/user-not-found') {
+                    if (String(realAuthErr).includes('operation-not-allowed') || String(realAuthErr).includes('internal-error') || String(realAuthErr).includes('api-key') || String(realAuthErr).includes('user-not-found')) {
                          const userData = await fetchAndLogin(email, password); 
                          onAuthSuccess(userData);
                     } else { throw realAuthErr; }
@@ -272,21 +336,38 @@
             } catch (err) {
               let msg = "Erro na autenticação.";
               if (err.code === 'auth/email-already-in-use') msg = "E-mail já cadastrado.";
-              if (err.code === 'auth/invalid-login-credentials' || err.code === 'auth/wrong-password') msg = "E-mail ou senha incorretos.";
+              if (err.code === 'auth/invalid-login-credentials') msg = "Dados incorretos.";
               if (err.message) msg = err.message;
               setError(msg);
             } finally { setLoading(false); }
           };
 
           return (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl">
-                <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-white">{type === 'login' ? 'Acessar Painel' : 'Criar Conta'}</h2><button onClick={onClose}><XCircle size={24} className="text-slate-400 hover:text-white"/></button></div>
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+              <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl my-8">
+                <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-white">{type === 'login' ? 'Acessar Painel' : 'Teste Grátis'}</h2><button onClick={onClose}><XCircle size={24} className="text-slate-400 hover:text-white"/></button></div>
                 {error && <div className="bg-red-500/10 border border-red-500/50 text-red-200 p-3 rounded-lg mb-4 text-sm">{error}</div>}
                 <form onSubmit={handleAuth} className="space-y-4">
                   <div><label className="text-xs text-slate-400 ml-1">E-mail</label><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none" placeholder="seu@email.com"/></div>
+                  
+                  {type === 'register' && (
+                      <div><label className="text-xs text-slate-400 ml-1">Seu WhatsApp (Com DDD)</label><input type="text" required value={whatsapp} onChange={(e) => setWhatsapp(e.target.value.replace(/\D/g, ''))} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none" placeholder="11999999999"/></div>
+                  )}
+
                   <div className="relative"><label className="text-xs text-slate-400 ml-1">Senha</label><input type={showPassword ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none" placeholder="******" minLength={6}/><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-8 text-slate-500 hover:text-white">{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button></div>
-                  <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3 rounded-lg hover:opacity-90 transition-opacity">{loading ? 'Processando...' : (type === 'login' ? 'Entrar' : 'Confirmar')}</button>
+                  
+                  {type === 'register' && (
+                      <div className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                          <label className="text-xs text-orange-400 font-bold mb-1 block">CÓDIGO DE VERIFICAÇÃO</label>
+                          <div className="flex gap-2 mb-2">
+                              <input type="text" required value={verificationCode} onChange={(e) => setVerificationCode(e.target.value)} className="flex-1 bg-slate-950 border border-slate-600 rounded-lg p-2 text-center text-white font-bold tracking-widest uppercase focus:border-green-500 outline-none" placeholder="CÓDIGO"/>
+                              <button type="button" onClick={openWhatsAppForCode} className="px-3 bg-green-600 hover:bg-green-500 text-white rounded-lg flex items-center justify-center" title="Pegar no WhatsApp"><MessageCircle size={20} /></button>
+                          </div>
+                          <p className="text-[10px] text-slate-400 text-center">Clique no ícone verde para pedir seu código de liberação.</p>
+                      </div>
+                  )}
+
+                  <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3 rounded-lg hover:opacity-90 transition-opacity">{loading ? 'Processando...' : (type === 'login' ? 'Entrar' : 'Confirmar Cadastro')}</button>
                 </form>
               </div>
             </div>
@@ -316,8 +397,106 @@
           );
         };
 
+        // --- COMPROVANTE DE RENOVAÇÃO ---
+        const RenewalSuccessModal = ({ isOpen, onClose, client, newDate }) => {
+            if (!isOpen || !client) return null;
+            
+            const messageText = `Olá *${client.name}*! 🚀\n\nSua assinatura FireTV foi RENOVAÇÃO COM SUCESSO!\n\n📅 *Novo Vencimento:* ${formatDate(newDate)}\n\nObrigado pela preferência! 👊`;
+            const encodedMessage = encodeURIComponent(messageText);
+            const phone = client.whatsapp ? client.whatsapp.replace(/\D/g, '') : '';
+
+            const copyToClipboard = () => {
+                navigator.clipboard.writeText(messageText);
+                alert("Mensagem copiada!");
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/90 z-[80] flex items-center justify-center p-4 fade-in">
+                    <div className="bg-slate-900 border border-green-500/50 w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
+                        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><XCircle size={24}/></button>
+                        
+                        <div className="flex flex-col items-center text-center mb-6">
+                            <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mb-4">
+                                <CheckCircle size={32} className="text-green-500" />
+                            </div>
+                            <h2 className="text-2xl font-bold text-white">Renovação Concluída!</h2>
+                            <p className="text-slate-400 text-sm mt-1">Vencimento atualizado para <span className="text-green-400 font-bold">{formatDate(newDate)}</span></p>
+                        </div>
+
+                        <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 mb-6 text-left">
+                            <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider font-bold">Mensagem para o Cliente:</p>
+                            <p className="text-sm text-slate-300 italic whitespace-pre-wrap">{messageText}</p>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button onClick={copyToClipboard} className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
+                                <Copy size={18} /> Copiar
+                            </button>
+                            {phone && (
+                                <a href={`https://wa.me/55${phone}?text=${encodedMessage}`} target="_blank" className="flex-1 bg-green-600 hover:bg-green-500 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors">
+                                    <MessageCircle size={18} /> Enviar Whats
+                                </a>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- VER DETALHES DO CLIENTE ---
+        const ViewClientModal = ({ isOpen, onClose, client }) => {
+            if (!isOpen || !client) return null;
+            const { status, label, color } = getClientStatus(client.dueDate);
+
+            return (
+                <div className="fixed inset-0 bg-black/80 z-[75] flex items-center justify-center p-4 fade-in">
+                    <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl p-0 shadow-2xl overflow-hidden">
+                        <div className="bg-slate-800 p-6 border-b border-slate-700 flex justify-between items-start">
+                            <div>
+                                <h2 className="text-2xl font-bold text-white mb-1">{client.name}</h2>
+                                <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-${color}-500/20 text-${color}-400 border border-${color}-500/30`}>
+                                    {label}
+                                </div>
+                            </div>
+                            <button onClick={onClose} className="text-slate-400 hover:text-white"><XCircle size={24}/></button>
+                        </div>
+                        
+                        <div className="p-6 space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800">
+                                    <p className="text-xs text-slate-500 uppercase mb-1">Vencimento</p>
+                                    <p className="text-white font-mono">{formatDate(client.dueDate)}</p>
+                                </div>
+                                <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800">
+                                    <p className="text-xs text-slate-500 uppercase mb-1">WhatsApp</p>
+                                    <p className="text-white font-mono">{client.whatsapp || '-'}</p>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800">
+                                <p className="text-xs text-slate-500 uppercase mb-1">Usuário / Login IPTV</p>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-orange-400 font-mono font-bold text-lg">{client.username || 'Não informado'}</p>
+                                    <button onClick={() => {navigator.clipboard.writeText(client.username); alert('Copiado!')}} className="text-slate-500 hover:text-white"><Copy size={16}/></button>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-950/50 p-4 rounded-lg border border-slate-800 min-h-[100px]">
+                                <p className="text-xs text-slate-500 uppercase mb-2 flex items-center gap-2"><FileText size={14}/> Notas / Observações</p>
+                                <p className="text-slate-300 text-sm whitespace-pre-wrap">{client.notes || 'Nenhuma observação registrada.'}</p>
+                            </div>
+                        </div>
+                        
+                        <div className="bg-slate-800 p-4 border-t border-slate-700 flex justify-end">
+                            <button onClick={onClose} className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium">Fechar</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const StatCard = ({ title, value, icon, color }) => (
-          <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 flex items-center justify-between">
+          <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 flex items-center justify-between hover:border-slate-600 transition-colors">
             <div><p className="text-slate-400 text-sm font-medium mb-1">{title}</p><h3 className="text-2xl font-bold text-white">{value}</h3></div>
             <div className={`p-3 rounded-lg bg-${color}-500/10 text-${color}-500`}>{icon}</div>
           </div>
@@ -344,6 +523,11 @@
           const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
           const [isProcessing, setIsProcessing] = useState(false);
           const [teamFilter, setTeamFilter] = useState('master');
+          const [configCode, setConfigCode] = useState('777'); 
+
+          // NOVOS ESTADOS PARA MODAIS
+          const [renewalSuccessData, setRenewalSuccessData] = useState(null); // { client, newDate }
+          const [viewClientData, setViewClientData] = useState(null); // client object
 
           const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
 
@@ -390,6 +574,16 @@
               setUser(null);
               setView('landing');
           };
+
+          useEffect(() => {
+              if (user?.role === 'ceo' && activeTab === 'settings') {
+                  getDoc(getSettingsDoc()).then(snap => {
+                      if (snap.exists() && snap.data().activationCode) {
+                          setConfigCode(snap.data().activationCode);
+                      }
+                  });
+              }
+          }, [user, activeTab]);
 
           useEffect(() => {
             if (!user || !user.id || view !== 'dashboard') return;
@@ -448,18 +642,51 @@
             } catch (error) { showToast(error.message, 'error'); }
           };
 
+          const handleSaveConfig = async (e) => {
+              e.preventDefault();
+              try {
+                  await setDoc(getSettingsDoc(), { activationCode: configCode }, { merge: true });
+                  showToast("Código atualizado com sucesso!");
+              } catch (error) {
+                  showToast("Erro ao salvar código.", 'error');
+              }
+          };
+
           const handleDeleteUser = (id) => {
             setConfirmDialog({ isOpen: true, title: 'Excluir?', message: 'Ação irreversível.', onConfirm: async () => { setIsProcessing(true); try { await deleteDoc(doc(getUsersCollection(), id)); showToast('Removido.'); setConfirmDialog({ isOpen: false }); } catch(e) { showToast(e.message, 'error'); } finally { setIsProcessing(false); } } });
           };
+          
+          const handleDeleteClient = (id) => {
+              setConfirmDialog({
+                  isOpen: true, title: 'Excluir Cliente', message: 'Tem certeza que deseja excluir este cliente?',
+                  onConfirm: async () => {
+                      setIsProcessing(true);
+                      try {
+                          await deleteDoc(doc(getClientsCollection(), id));
+                          showToast('Cliente removido.');
+                          setConfirmDialog({ isOpen: false });
+                      } catch (err) { showToast('Erro: ' + err.message, 'error'); } finally { setIsProcessing(false); }
+                  }
+              });
+          };
+
           const handleRenewClient = (client) => {
-            setConfirmDialog({ isOpen: true, title: 'Renovar?', message: 'Adicionar 30 dias?', onConfirm: async () => { 
+            setConfirmDialog({ isOpen: true, title: 'Renovar Cliente', message: 'Adicionar 30 dias ao vencimento?', onConfirm: async () => { 
                 setIsProcessing(true); try {
                     let baseDate = new Date();
                     const currentDue = client.dueDate ? new Date(client.dueDate + 'T12:00:00') : new Date();
+                    // Se data futura, soma nela. Se passada, soma de hoje.
                     if (!isNaN(currentDue.getTime()) && currentDue > baseDate) baseDate = currentDue;
+                    
                     baseDate.setDate(baseDate.getDate() + 30);
-                    await updateDoc(doc(getClientsCollection(), client.id), { dueDate: baseDate.toISOString().split('T')[0], status: 'active' });
-                    showToast('Renovado!'); setConfirmDialog({isOpen:false});
+                    const newDateStr = baseDate.toISOString().split('T')[0];
+                    
+                    await updateDoc(doc(getClientsCollection(), client.id), { dueDate: newDateStr, status: 'active' });
+                    
+                    setConfirmDialog({isOpen:false});
+                    // ABRE O MODAL DE SUCESSO COM O COMPROVANTE
+                    setRenewalSuccessData({ client: client, newDate: newDateStr });
+                    
                 } catch(e) { showToast(e.message, 'error'); } finally { setIsProcessing(false); } 
             }});
           };
@@ -498,32 +725,15 @@
           const isExpired = isPanelExpired(user?.panelExpiration) && user?.role !== 'ceo';
           const isTrial = user?.plan === 'trial';
 
-          // --- TELA DE BLOQUEIO (PAGAMENTO) ---
           if (isExpired) {
               return (
                 <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
                     <div className="absolute inset-0 bg-red-600/10 pointer-events-none"></div>
                     <div className="bg-slate-900 p-8 rounded-2xl border border-red-500/50 max-w-md w-full shadow-2xl relative z-10">
-                        <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <Ban size={32} className="text-red-500" />
-                        </div>
+                        <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6"><Ban size={32} className="text-red-500" /></div>
                         <h2 className="text-3xl font-bold text-white mb-2">ACESSO BLOQUEADO</h2>
-                        <p className="text-slate-400 mb-8 leading-relaxed">
-                            Seu painel <strong>expirou</strong>. Para continuar gerenciando seus clientes e acessando seus dados, você precisa renovar sua assinatura.
-                        </p>
-                        <div className="bg-slate-800/50 p-4 rounded-lg mb-6 border border-slate-700">
-                            <p className="text-sm text-slate-500 mb-1">Status da Conta</p>
-                            <div className="flex items-center justify-center gap-2 text-red-400 font-bold">
-                                <AlertTriangle size={18} />
-                                <span>Vencido há {Math.abs(myDaysLeft)} dias</span>
-                            </div>
-                        </div>
-                        <button onClick={handleLogout} className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl transition-colors mb-4">
-                            Sair da Conta
-                        </button>
-                        <p className="text-xs text-slate-500">
-                            Entre em contato com seu Master/CEO para regularizar.
-                        </p>
+                        <p className="text-slate-400 mb-8 leading-relaxed">Seu painel <strong>expirou</strong>. Renove para continuar.</p>
+                        <button onClick={handleLogout} className="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl transition-colors mb-4">Sair da Conta</button>
                     </div>
                 </div>
               );
@@ -533,6 +743,11 @@
             <>
               <ToastNotification notification={notification} onClose={() => setNotification({...notification, show: false})} />
               <ConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog({...confirmDialog, isOpen: false})} isLoading={isProcessing} />
+              
+              {/* MODAIS NOVOS */}
+              <RenewalSuccessModal isOpen={!!renewalSuccessData} onClose={() => setRenewalSuccessData(null)} client={renewalSuccessData?.client} newDate={renewalSuccessData?.newDate} />
+              <ViewClientModal isOpen={!!viewClientData} onClose={() => setViewClientData(null)} client={viewClientData} />
+
               {showAuthModal && <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} type={authType} onAuthSuccess={handleAuthSuccess} />}
 
               {view === 'landing' ? (
@@ -552,6 +767,7 @@
                         <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /> Início</button>
                         <button onClick={() => setActiveTab('clients')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'clients' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'text-slate-400 hover:bg-slate-800'}`}><UserPlus size={20} /> Clientes</button>
                         {user.role !== 'reseller' && <button onClick={() => setActiveTab('team')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'team' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'text-slate-400 hover:bg-slate-800'}`}><Shield size={20} /> Equipe</button>}
+                        {user.role === 'ceo' && <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'settings' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'text-slate-400 hover:bg-slate-800'}`}><Settings size={20} /> Configurações</button>}
                     </div>
                     <div className="p-4 border-t border-slate-800">
                         <div className="flex items-center gap-3 mb-4 px-2">
@@ -564,7 +780,7 @@
                   <div className="md:hidden fixed top-0 w-full bg-slate-900 z-10 border-b border-slate-800 p-4 flex justify-between items-center"><span className="font-bold">FIRE TV</span><button onClick={handleLogout}><LogOut size={20}/></button></div>
                   <main className="flex-1 overflow-y-auto p-4 md:p-8 pt-20 md:pt-8 relative">
                     <header className="flex justify-between items-center mb-8">
-                        <div><h1 className="text-2xl font-bold text-white">{activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'clients' ? 'Clientes' : 'Equipe'}</h1><p className="text-slate-400 text-sm">{user.role !== 'ceo' ? `` : `Painel Admin`}</p></div>
+                        <div><h1 className="text-2xl font-bold text-white">{activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'clients' ? 'Clientes' : activeTab === 'team' ? 'Equipe' : 'Configurações'}</h1><p className="text-slate-400 text-sm">{user.role !== 'ceo' ? `` : `Painel Admin`}</p></div>
                         <div className="flex gap-2">{(activeTab === 'clients' || activeTab === 'team') && <button onClick={() => openAddModal(activeTab === 'clients' ? 'client' : 'user')} className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-lg shadow-orange-500/20"><Plus size={18} /> Novo</button>}</div>
                     </header>
                     {activeTab === 'dashboard' && (
@@ -595,9 +811,26 @@
                     {activeTab === 'clients' && (
                         <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden flex flex-col h-[calc(100vh-180px)]">
                             <div className="p-4 border-b border-slate-800 flex gap-4"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar..." className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2 pl-10 text-white outline-none" /></div><div className="flex gap-2">{[{id:'all',l:'Todos'},{id:'active',l:'Ativos'},{id:'expired',l:'Vencidos'}].map(f=><button key={f.id} onClick={()=>setFilterStatus(f.id)} className={`px-4 py-2 rounded-lg text-sm ${filterStatus===f.id?'bg-orange-500 text-white':'bg-slate-800 text-slate-400'}`}>{f.l}</button>)}</div></div>
-                            <div className="overflow-auto flex-1"><table className="w-full text-left text-sm text-slate-400"><thead className="bg-slate-950 text-slate-300 uppercase text-xs sticky top-0"><tr><th className="px-6 py-3">Nome</th><th className="px-6 py-3">Vencimento</th><th className="px-6 py-3">Status</th><th className="px-6 py-3 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-800">{filteredClients.map(client => {
+                            <div className="overflow-auto flex-1"><table className="w-full text-left text-sm text-slate-400"><thead className="bg-slate-950 text-slate-300 uppercase text-xs sticky top-0 shadow-md"><tr><th className="px-6 py-3">Nome / Login</th><th className="px-6 py-3">Vencimento</th><th className="px-6 py-3">Status</th><th className="px-6 py-3 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-800">{filteredClients.map(client => {
                                 const { label, color } = getClientStatus(client.dueDate);
-                                return <tr key={client.id} className="hover:bg-slate-800/30"><td className="px-6 py-4 font-bold text-white">{client.name}</td><td className="px-6 py-4">{formatDate(client.dueDate)}</td><td className="px-6 py-4"><span className={`text-${color}-400`}>{label}</span></td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>handleRenewClient(client)} className="p-2 bg-blue-600/20 text-blue-400 rounded"><RefreshCw size={16}/></button><button onClick={()=>openAddModal('client',client)} className="p-2 bg-slate-700 text-white rounded"><Edit size={16}/></button><button onClick={()=>handleDeleteClient(client.id)} className="p-2 bg-red-600/20 text-red-400 rounded"><Trash2 size={16}/></button></td></tr>
+                                const waLink = client.whatsapp ? `https://wa.me/55${client.whatsapp.replace(/\D/g,'')}?text=${generateWhatsAppMessage(client)}` : null;
+                                return <tr key={client.id} className="hover:bg-slate-800/30 transition-colors">
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-1 h-10 bg-${color}-500 rounded-full`}></div>
+                                            <div><p className="font-bold text-white text-base">{client.name}</p><p className="text-xs text-slate-500 font-mono mt-0.5">{client.username || '-'}</p></div>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4"><p className="text-slate-300 font-medium">{formatDate(client.dueDate)}</p></td>
+                                    <td className="px-6 py-4"><span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-${color}-500/10 text-${color}-400 border border-${color}-500/20`}>{label}</span></td>
+                                    <td className="px-6 py-4 text-right"><div className="flex items-center justify-end gap-2">
+                                        {waLink && <a href={waLink} target="_blank" className="p-2 bg-green-600/20 hover:bg-green-600 text-green-400 hover:text-white rounded-lg transition-colors" title="Cobrar no WhatsApp"><MessageCircle size={18}/></a>}
+                                        <button onClick={()=>handleRenewClient(client)} className="p-2 bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white rounded-lg transition-colors" title="Renovar"><RefreshCw size={18}/></button>
+                                        <button onClick={()=>setViewClientData(client)} className="p-2 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded-lg transition-colors" title="Ver Detalhes"><Eye size={18}/></button>
+                                        <button onClick={()=>openAddModal('client',client)} className="p-2 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded-lg transition-colors" title="Editar"><Edit size={18}/></button>
+                                        <button onClick={()=>handleDeleteClient(client.id)} className="p-2 bg-red-600/10 hover:bg-red-600 text-red-400 hover:text-white rounded-lg transition-colors" title="Excluir"><Trash2 size={18}/></button>
+                                    </div></td>
+                                </tr>
                             })}</tbody></table></div>
                         </div>
                     )}
@@ -610,6 +843,17 @@
                             })}</tbody></table></div>
                         </div>
                     )}
+                    {activeTab === 'settings' && user.role === 'ceo' && (
+                        <div className="max-w-lg mx-auto">
+                            <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl">
+                                <h2 className="text-2xl font-bold mb-6 flex items-center gap-3 text-white"><Settings size={28} className="text-orange-500" /> Configurações do Sistema</h2>
+                                <form onSubmit={handleSaveConfig} className="space-y-6">
+                                    <div><label className="block text-sm font-medium text-slate-400 mb-2">Código de Verificação (WhatsApp)</label><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" value={configCode} onChange={(e) => setConfigCode(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white font-mono tracking-wider focus:border-orange-500 outline-none transition-colors" placeholder="Ex: 777"/></div><p className="text-xs text-slate-500 mt-2">Este é o código que os usuários devem digitar ao criar uma conta de teste grátis.</p></div>
+                                    <button type="submit" className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3 rounded-lg hover:opacity-90 transition-transform active:scale-95 flex items-center justify-center gap-2"><Save size={20} /> Salvar Alterações</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
                     {isAddModalOpen && (
                         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
                             <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-xl p-6 shadow-2xl">
@@ -618,8 +862,9 @@
                                     {modalType === 'client' ? (
                                         <>
                                             <input required placeholder="Nome" value={formData.name||''} onChange={e=>setFormData({...formData,name:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-2 outline-none"/>
-                                            <input placeholder="WhatsApp" value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-2 outline-none"/>
+                                            <input placeholder="WhatsApp (Ex: 11999999999)" value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-2 outline-none"/>
                                             <input type="date" required value={formData.dueDate||''} onChange={e=>setFormData({...formData,dueDate:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-2 outline-none"/>
+                                            <input placeholder="Login IPTV" value={formData.username||''} onChange={e=>setFormData({...formData,username:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-2 outline-none"/>
                                             <textarea placeholder="Notas" rows="2" value={formData.notes||''} onChange={e=>setFormData({...formData,notes:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded p-2 outline-none"/>
                                         </>
                                     ) : (
@@ -640,13 +885,8 @@
           );
         }
 
-        // Renderizar com Error Boundary
         const root = createRoot(document.getElementById('root'));
-        root.render(
-          <ErrorBoundary>
-            <FireTVManager />
-          </ErrorBoundary>
-        );
+        root.render(<ErrorBoundary><FireTVManager /></ErrorBoundary>);
     </script>
 </body>
 </html>
