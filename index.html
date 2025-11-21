@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIRE TV - Gestor IPTV</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Babel para traduzir o código React -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Import Map para Módulos (CORRIGIDO) -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js",
+        "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+      }
+    }
+    </script>
+</head>
+<body class="bg-slate-950 text-white">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { initializeApp } from 'firebase/app';
+        import { 
+          getAuth, 
+          signInWithEmailAndPassword,
+          createUserWithEmailAndPassword,
+          signOut,
+          onAuthStateChanged
+        } from 'firebase/auth';
+        import { 
+          getFirestore, 
+          collection, 
+          addDoc, 
+          query, 
+          where, 
+          onSnapshot, 
+          doc, 
+          updateDoc, 
+          deleteDoc,
+          serverTimestamp,
+          getDocs,
+          setDoc,
+          getDoc
+        } from 'firebase/firestore';
+        import { 
+          Tv, LayoutDashboard, LogOut, Plus, Search, UserPlus, Shield, 
+          Trash2, Edit, CheckCircle, XCircle, Calendar, Zap, TrendingUp, 
+          Smartphone, Globe, Settings, RefreshCw, MessageCircle, Filter, 
+          AlertTriangle, DollarSign, Lock, Unlock, Eye, EyeOff
+        } from 'lucide-react';
+
+        // --- CONFIGURAÇÃO DO FIREBASE (COLE SUAS CHAVES AQUI NO PASSO 2) ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyClcK67ZPEC-4uky5y6RIYCyKF4BqO3xcE",
+          authDomain: "firetv-gestor.firebaseapp.com",
+          projectId: "firetv-gestor",
+          storageBucket: "firetv-gestor.firebasestorage.app",
+          messagingSenderId: "345143716576",
+          appId: "1:345143716576:web:bc9837700de2dc21a8fe85"
+        };
+
+        // Inicialização
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        
+        // Nome da coleção principal (Pode manter ou mudar)
+        const ARTIFACTS_COLLECTION = 'firetv_production_db'; 
+
+        // --- UTILITÁRIOS ---
+        const formatDate = (dateString) => {
+          if (!dateString) return '-';
+          const date = new Date(dateString + 'T12:00:00'); 
+          return new Intl.DateTimeFormat('pt-BR').format(date);
+        };
+
+        const getClientStatus = (dueDate) => {
+          if (!dueDate) return { status: 'no_date', label: 'Sem Data', color: 'slate' };
+          const today = new Date(); today.setHours(0, 0, 0, 0);
+          const due = new Date(dueDate + 'T12:00:00'); due.setHours(0, 0, 0, 0);
+          const diffTime = due - today;
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          if (diffDays < 0) return { status: 'expired', label: 'Vencido', color: 'red', days: diffDays };
+          if (diffDays === 0) return { status: 'today', label: 'Vence Hoje', color: 'orange', days: 0 };
+          if (diffDays <= 3) return { status: 'expiring', label: `Vence em ${diffDays}d`, color: 'yellow', days: diffDays };
+          return { status: 'active', label: 'Ativo', color: 'green', days: diffDays };
+        };
+
+        const generateWhatsAppLink = (client) => {
+          if (!client.whatsapp) return null;
+          const { status, days } = getClientStatus(client.dueDate);
+          let message = `Olá ${client.name}, tudo bem? aqui é do Fire TV.`;
+          if (status === 'expired') message += ` Seu plano IPTV venceu há ${Math.abs(days)} dias.`;
+          else if (status === 'today') message += ` Seu plano vence HOJE.`;
+          else message += ` Agradecemos a preferência!`;
+          const phone = client.whatsapp.replace(/\D/g, '');
+          return `https://wa.me/55${phone}?text=${encodeURIComponent(message)}`;
+        };
+
+        // --- COMPONENTES ---
+
+        const LandingPage = ({ onLogin, onRegister }) => (
+          <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-orange-500 selection:text-white">
+              <nav className="container mx-auto px-6 py-4 flex justify-between items-center z-20 relative">
+                <div className="flex items-center gap-2">
+                  <div className="bg-gradient-to-br from-orange-500 to-red-600 p-2 rounded-lg">
+                    <Tv size={24} className="text-white" />
+                  </div>
+                  <span className="text-2xl font-bold tracking-tighter">FIRE <span className="text-orange-500">TV</span></span>
+                </div>
+                <button onClick={onLogin} className="text-slate-300 hover:text-white font-medium transition-colors">Área do Cliente</button>
+              </nav>
+              <div className="relative pt-16 pb-32 flex content-center items-center justify-center min-h-[85vh]">
+                <div className="absolute top-0 w-full h-full bg-center bg-cover opacity-20" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1593784991095-a20506948430?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80')" }}></div>
+                <div className="container relative mx-auto px-4 text-center z-10">
+                  <div className="inline-block mb-4 px-4 py-1 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 font-semibold text-sm animate-pulse">🚀 O Gestor IPTV #1 do Brasil</div>
+                  <h1 className="text-5xl md:text-7xl font-extrabold leading-tight mb-6">Potencialize sua <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-600">Revenda</span></h1>
+                  <div className="flex flex-col sm:flex-row justify-center gap-4">
+                    <button onClick={onRegister} className="px-8 py-4 bg-gradient-to-r from-orange-500 to-red-600 rounded-xl font-bold text-lg shadow-lg shadow-orange-500/30 hover:scale-105 transition-transform flex items-center justify-center gap-2"><Zap size={20} /> Teste Grátis por 7 Dias</button>
+                    <button onClick={onLogin} className="px-8 py-4 bg-slate-800 border border-slate-700 rounded-xl font-bold text-lg hover:bg-slate-700 transition-colors">Já tenho conta</button>
+                  </div>
+                </div>
+              </div>
+          </div>
+        );
+
+        const AuthModal = ({ isOpen, onClose, type, onAuthSuccess }) => {
+          const [email, setEmail] = useState('');
+          const [password, setPassword] = useState('');
+          const [loading, setLoading] = useState(false);
+          const [error, setError] = useState('');
+          const [showPassword, setShowPassword] = useState(false);
+
+          if (!isOpen) return null;
+
+          const handleAuth = async (e) => {
+            e.preventDefault();
+            setLoading(true);
+            setError('');
+
+            try {
+              if (type === 'register') {
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+                
+                // Verifica se já existe convite
+                const q = query(collection(db, ARTIFACTS_COLLECTION, 'data', 'users'), where('email', '==', email));
+                const querySnapshot = await getDocs(q);
+
+                let userData = {};
+
+                if (!querySnapshot.empty) {
+                  const existingDoc = querySnapshot.docs[0];
+                  const existingData = existingDoc.data();
+                  
+                  // Atualiza convite existente com UID real
+                  await setDoc(doc(db, ARTIFACTS_COLLECTION, 'data', 'users', existingDoc.id), {
+                    ...existingData,
+                    uid: user.uid,
+                    lastLogin: serverTimestamp()
+                  }, { merge: true });
+                  userData = existingData;
+                  
+                } else {
+                  // Novo Cadastro
+                  const isCeo = email === 'admin@firetv.com'; // REGRA PARA O PRIMEIRO CEO
+                  userData = {
+                    uid: user.uid,
+                    email: email,
+                    role: isCeo ? 'ceo' : 'reseller',
+                    parentId: 'system',
+                    createdAt: serverTimestamp(),
+                    name: email.split('@')[0],
+                    status: 'active',
+                    plan: isCeo ? 'unlimited' : 'trial',
+                    credits: 0
+                  };
+                  await addDoc(collection(db, ARTIFACTS_COLLECTION, 'data', 'users'), userData);
+                }
+                onAuthSuccess(userData);
+              } else {
+                await signInWithEmailAndPassword(auth, email, password);
+                // O onAuthStateChanged vai lidar com o redirecionamento
+                onClose();
+              }
+            } catch (err) {
+              console.error(err);
+              let msg = "Erro na autenticação.";
+              if (err.code === 'auth/wrong-password') msg = "Senha incorreta.";
+              if (err.code === 'auth/user-not-found') msg = "Usuário não encontrado.";
+              if (err.code === 'auth/email-already-in-use') msg = "E-mail já cadastrado.";
+              if (err.code === 'auth/weak-password') msg = "A senha é muito fraca.";
+              setError(msg);
+            } finally {
+              setLoading(false);
+            }
+          };
+
+          return (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-white">{type === 'login' ? 'Acessar Painel' : 'Criar Conta'}</h2>
+                  <button onClick={onClose}><XCircle size={24} className="text-slate-400 hover:text-white"/></button>
+                </div>
+                {error && <div className="bg-red-500/10 border border-red-500/50 text-red-200 p-3 rounded-lg mb-4 text-sm">{error}</div>}
+                <form onSubmit={handleAuth} className="space-y-4">
+                  <div><label className="text-xs text-slate-400 ml-1">E-mail</label><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none" placeholder="seu@email.com"/></div>
+                  <div className="relative">
+                     <label className="text-xs text-slate-400 ml-1">Senha</label>
+                     <input type={showPassword ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none" placeholder="******" minLength={6}/>
+                     <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-8 text-slate-500 hover:text-white">{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button>
+                  </div>
+                  <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3 rounded-lg hover:opacity-90 transition-opacity">{loading ? 'Processando...' : (type === 'login' ? 'Entrar' : 'Confirmar Cadastro')}</button>
+                </form>
+              </div>
+            </div>
+          );
+        };
+
+        const ToastNotification = ({ notification, onClose }) => {
+          if (!notification.show) return null;
+          useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, [notification, onClose]);
+          return (
+            <div className={`fixed bottom-4 right-4 z-[60] flex items-center gap-3 px-4 py-3 rounded-lg shadow-2xl border animate-in slide-in-from-right duration-300 ${notification.type === 'success' ? 'bg-slate-900 border-green-500/50 text-green-400' : 'bg-slate-900 border-red-500/50 text-red-400'}`}>
+              {notification.type === 'success' ? <CheckCircle size={20} /> : <AlertTriangle size={20} />}
+              <p className="font-medium text-sm text-white">{notification.message}</p>
+            </div>
+          );
+        };
+
+        const ConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, isLoading }) => {
+          if (!isOpen) return null;
+          return (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-xl p-6 shadow-2xl">
+                <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
+                <p className="text-slate-400 mb-6">{message}</p>
+                <div className="flex gap-3 justify-end">
+                  <button onClick={onCancel} disabled={isLoading} className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-800">Cancelar</button>
+                  <button onClick={onConfirm} disabled={isLoading} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold">{isLoading ? '...' : 'Confirmar'}</button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        const StatCard = ({ title, value, icon, color }) => (
+          <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 flex items-center justify-between">
+            <div><p className="text-slate-400 text-sm font-medium mb-1">{title}</p><h3 className="text-2xl font-bold text-white">{value}</h3></div>
+            <div className={`p-3 rounded-lg bg-${color}-500/10 text-${color}-500`}>{icon}</div>
+          </div>
+        );
+
+        // --- APP PRINCIPAL ---
+        const FireTVManager = () => {
+          const [user, setUser] = useState(null);
+          const [view, setView] = useState('landing');
+          const [activeTab, setActiveTab] = useState('dashboard');
+          const [showAuthModal, setShowAuthModal] = useState(false);
+          const [authType, setAuthType] = useState('login');
+          const [clients, setClients] = useState([]);
+          const [team, setTeam] = useState([]);
+          const [allResellersCount, setAllResellersCount] = useState(0);
+          const [initializing, setInitializing] = useState(true);
+          const [filterStatus, setFilterStatus] = useState('all');
+          const [searchTerm, setSearchTerm] = useState('');
+          const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+          const [modalType, setModalType] = useState('client'); 
+          const [editingItem, setEditingItem] = useState(null); 
+          const [formData, setFormData] = useState({});
+          const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
+          const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+          const [isProcessing, setIsProcessing] = useState(false);
+
+          const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
+
+          useEffect(() => {
+            const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+              if (currentUser) {
+                const q = query(collection(db, ARTIFACTS_COLLECTION, 'data', 'users'), where('email', '==', currentUser.email));
+                const snapshot = await getDocs(q);
+                if (!snapshot.empty) {
+                    const userDoc = snapshot.docs[0];
+                    setUser({ id: userDoc.id, ...userDoc.data() });
+                    setView('dashboard');
+                } else {
+                     // Fallback de segurança
+                     const isCeo = currentUser.email === 'admin@firetv.com';
+                     const newUser = {
+                        uid: currentUser.uid,
+                        email: currentUser.email,
+                        role: isCeo ? 'ceo' : 'reseller',
+                        parentId: 'system',
+                        createdAt: serverTimestamp(),
+                        name: currentUser.email.split('@')[0],
+                        status: 'active',
+                        credits: 0
+                     };
+                     await addDoc(collection(db, ARTIFACTS_COLLECTION, 'data', 'users'), newUser);
+                     setUser(newUser);
+                     setView('dashboard');
+                }
+              } else {
+                setUser(null);
+                setView('landing');
+              }
+              setInitializing(false);
+            });
+            return () => unsubscribe();
+          }, []);
+
+          useEffect(() => {
+            if (!user || view !== 'dashboard') return;
+            
+            const qClients = query(collection(db, ARTIFACTS_COLLECTION, 'data', 'clients'), where('createdBy', '==', user.email));
+            const unsubscribeClients = onSnapshot(qClients, (snapshot) => {
+                setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            });
+
+            let unsubscribeTeam = () => {};
+            let unsubscribeAllResellers = () => {}; 
+
+            if (user.role === 'ceo') {
+                const qTeam = query(collection(db, ARTIFACTS_COLLECTION, 'data', 'users'), where('role', '==', 'master'));
+                unsubscribeTeam = onSnapshot(qTeam, (snapshot) => setTeam(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+                
+                const qAllResellers = query(collection(db, ARTIFACTS_COLLECTION, 'data', 'users'), where('role', '==', 'reseller'));
+                unsubscribeAllResellers = onSnapshot(qAllResellers, (snapshot) => setAllResellersCount(snapshot.size));
+            } else if (user.role === 'master') {
+                const qTeam = query(collection(db, ARTIFACTS_COLLECTION, 'data', 'users'), where('role', '==', 'reseller'), where('parentId', '==', user.email));
+                unsubscribeTeam = onSnapshot(qTeam, (snapshot) => setTeam(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+            }
+            return () => { unsubscribeClients(); unsubscribeTeam(); unsubscribeAllResellers(); };
+          }, [user, view]);
+
+          const handleLogout = async () => await signOut(auth);
+
+          const openAddModal = (type, itemToEdit = null) => {
+            setModalType(type);
+            setEditingItem(itemToEdit);
+            setFormData(itemToEdit ? { ...itemToEdit } : {});
+            setIsAddModalOpen(true);
+          };
+
+          const handleSaveItem = async (e) => {
+            e.preventDefault();
+            try {
+                if (modalType === 'client') {
+                    if (editingItem) {
+                        await updateDoc(doc(db, ARTIFACTS_COLLECTION, 'data', 'clients', editingItem.id), { ...formData });
+                        showToast('Cliente atualizado!');
+                    } else {
+                        await addDoc(collection(db, ARTIFACTS_COLLECTION, 'data', 'clients'), {
+                            ...formData, createdBy: user.email, createdAt: new Date().toISOString(), status: 'active'
+                        });
+                        showToast('Cliente cadastrado!');
+                    }
+                } else {
+                    // Criar Usuário/Convite
+                    if (!editingItem) {
+                         const qCheck = query(collection(db, ARTIFACTS_COLLECTION, 'data', 'users'), where('email', '==', formData.email));
+                         const snapCheck = await getDocs(qCheck);
+                         if (!snapCheck.empty) throw new Error("E-mail já cadastrado.");
+                    }
+
+                    if (editingItem) {
+                        await updateDoc(doc(db, ARTIFACTS_COLLECTION, 'data', 'users', editingItem.id), { ...formData, credits: Number(formData.credits) });
+                        showToast('Dados atualizados!');
+                    } else {
+                        const newRole = user.role === 'ceo' ? 'master' : 'reseller';
+                        await addDoc(collection(db, ARTIFACTS_COLLECTION, 'data', 'users'), {
+                            ...formData,
+                            role: newRole,
+                            parentId: user.email,
+                            createdAt: serverTimestamp(),
+                            status: 'active',
+                            credits: Number(formData.credits) || 0,
+                            isInvite: true
+                        });
+                        showToast('Usuário pré-cadastrado! Peça para ele se registrar.');
+                    }
+                }
+                setIsAddModalOpen(false);
+                setFormData({});
+                setEditingItem(null);
+            } catch (error) { showToast("Erro: " + error.message, 'error'); }
+          };
+
+          const handleDeleteUser = (id) => {
+            setConfirmDialog({
+                isOpen: true, title: 'Excluir Usuário', message: 'Tem certeza? O acesso será revogado.',
+                onConfirm: async () => {
+                    setIsProcessing(true);
+                    try {
+                        await deleteDoc(doc(db, ARTIFACTS_COLLECTION, 'data', 'users', id));
+                        showToast('Usuário removido.');
+                        setConfirmDialog({ isOpen: false });
+                    } catch(err) { showToast('Erro: ' + err.message, 'error'); } finally { setIsProcessing(false); }
+                }
+            });
+          };
+
+          const handleToggleUserStatus = async (userItem) => {
+              const newStatus = userItem.status === 'active' ? 'blocked' : 'active';
+              try {
+                  await updateDoc(doc(db, ARTIFACTS_COLLECTION, 'data', 'users', userItem.id), { status: newStatus });
+                  showToast(`Status alterado para ${newStatus}!`);
+              } catch(err) { showToast('Erro ao alterar status', 'error'); }
+          };
+          
+          const handleDeleteClient = (id) => {
+              setConfirmDialog({
+                  isOpen: true, title: 'Excluir Cliente', message: 'Tem certeza que deseja excluir?',
+                  onConfirm: async () => {
+                      setIsProcessing(true);
+                      try {
+                          await deleteDoc(doc(db, ARTIFACTS_COLLECTION, 'data', 'clients', id));
+                          showToast('Cliente removido.');
+                          setConfirmDialog({ isOpen: false });
+                      } catch (err) { showToast('Erro: ' + err.message, 'error'); } finally { setIsProcessing(false); }
+                  }
+              });
+          };
+
+          const handleRenewClient = (client) => {
+            setConfirmDialog({
+                isOpen: true, title: 'Renovar Cliente', message: `Adicionar 30 dias para ${client.name}?`,
+                onConfirm: async () => {
+                    setIsProcessing(true);
+                    try {
+                        let baseDate = new Date();
+                        const currentDueStr = client.dueDate; 
+                        if (currentDueStr) {
+                             const currentDue = new Date(currentDueStr + 'T12:00:00');
+                             if (currentDue > baseDate) baseDate = currentDue;
+                        }
+                        baseDate.setDate(baseDate.getDate() + 30);
+                        const newDateStr = baseDate.toISOString().split('T')[0];
+                        await updateDoc(doc(db, ARTIFACTS_COLLECTION, 'data', 'clients', client.id), { dueDate: newDateStr, status: 'active' });
+                        showToast(`Renovado até ${formatDate(newDateStr)}!`);
+                        setConfirmDialog({ isOpen: false });
+                    } catch (err) { showToast('Erro: ' + err.message, 'error'); } finally { setIsProcessing(false); }
+                }
+            });
+          };
+
+          const filteredClients = useMemo(() => {
+              return clients.filter(client => {
+                  const matchText = client.name?.toLowerCase().includes(searchTerm.toLowerCase()) || client.whatsapp?.includes(searchTerm);
+                  if (!matchText) return false;
+                  const { status } = getClientStatus(client.dueDate);
+                  if (filterStatus === 'all') return true;
+                  if (filterStatus === 'active') return status === 'active' || status === 'expiring' || status === 'today';
+                  if (filterStatus === 'expired') return status === 'expired';
+                  if (filterStatus === 'expiring') return status === 'expiring' || status === 'today';
+                  return true;
+              }).sort((a, b) => new Date(a.dueDate || '2099-01-01') - new Date(b.dueDate || '2099-01-01'));
+          }, [clients, searchTerm, filterStatus]);
+
+          const RoleBadge = ({ role }) => {
+              const styles = { ceo: 'bg-red-500/20 text-red-400 border-red-500/30', master: 'bg-purple-500/20 text-purple-400 border-purple-500/30', reseller: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
+              const labels = { ceo: 'CEO', master: 'MASTER', reseller: 'REVENDA' };
+              return <span className={`px-2 py-0.5 rounded text-xs font-bold border ${styles[role] || styles.reseller}`}>{labels[role]}</span>;
+          };
+
+          if (initializing) return <div className="h-screen bg-slate-950 flex items-center justify-center text-orange-500 font-bold animate-pulse">Carregando Fire TV...</div>;
+
+          return (
+            <>
+              <ToastNotification notification={notification} onClose={() => setNotification({...notification, show: false})} />
+              <ConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={() => setConfirmDialog({...confirmDialog, isOpen: false})} isLoading={isProcessing} />
+              
+              {showAuthModal && <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} type={authType} onAuthSuccess={() => {}} />}
+
+              {view === 'landing' ? (
+                <LandingPage onLogin={() => { setAuthType('login'); setShowAuthModal(true); }} onRegister={() => { setAuthType('register'); setShowAuthModal(true); }} />
+              ) : (
+                <div className="flex h-screen bg-slate-950 text-white overflow-hidden font-sans">
+                  <aside className="w-64 bg-slate-900 border-r border-slate-800 hidden md:flex flex-col">
+                    <div className="p-6 border-b border-slate-800 flex items-center gap-2">
+                        <div className="bg-gradient-to-br from-orange-500 to-red-600 p-1.5 rounded"><Tv size={20} className="text-white" /></div>
+                        <span className="text-xl font-bold tracking-tight">FIRE <span className="text-orange-500">TV</span></span>
+                    </div>
+                    <div className="p-4 flex-1 space-y-2">
+                        <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /> Início</button>
+                        <button onClick={() => setActiveTab('clients')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'clients' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'text-slate-400 hover:bg-slate-800'}`}><UserPlus size={20} /> Meus Clientes</button>
+                        {user.role !== 'reseller' && <button onClick={() => setActiveTab('team')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'team' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 'text-slate-400 hover:bg-slate-800'}`}><Shield size={20} /> {user.role === 'ceo' ? 'Gerir Masters' : 'Minhas Revendas'}</button>}
+                    </div>
+                    <div className="p-4 border-t border-slate-800">
+                        <div className="flex items-center gap-3 mb-4 px-2">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-slate-700 to-slate-600 flex items-center justify-center text-xs font-bold">{user.name?.charAt(0).toUpperCase()}</div>
+                            <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{user.name}</p><RoleBadge role={user.role} /></div>
+                        </div>
+                        <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-red-400 hover:bg-red-500/10 p-2 rounded-lg text-sm"><LogOut size={16} /> Sair</button>
+                    </div>
+                  </aside>
+
+                  <div className="md:hidden fixed top-0 w-full bg-slate-900 z-10 border-b border-slate-800 p-4 flex justify-between items-center"><span className="font-bold">FIRE TV</span><button onClick={handleLogout}><LogOut size={20}/></button></div>
+
+                  <main className="flex-1 overflow-y-auto p-4 md:p-8 pt-20 md:pt-8 relative">
+                    <header className="flex justify-between items-center mb-8">
+                        <div>
+                            <h1 className="text-2xl font-bold text-white">{activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'clients' ? 'Gestão de Clientes' : (user.role === 'ceo' ? 'Mestres' : 'Revendedores')}</h1>
+                            <p className="text-slate-400 text-sm">{activeTab === 'clients' ? 'Gerencie renovações, edições e cobranças.' : `Bem-vindo ao painel Fire TV, ${user.name}.`}</p>
+                        </div>
+                        <div className="flex gap-2">
+                            {(activeTab === 'clients' || activeTab === 'team') && (
+                                <button onClick={() => openAddModal(activeTab === 'clients' ? 'client' : 'user')} className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-lg shadow-orange-500/20"><Plus size={18} /> Novo {activeTab === 'clients' ? 'Cliente' : (user.role === 'ceo' ? 'Master' : 'Revenda')}</button>
+                            )}
+                        </div>
+                    </header>
+
+                    {activeTab === 'dashboard' && (
+                        <div className="space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                                <StatCard title="Total Clientes" value={clients.length} icon={<UserPlus size={24} />} color="blue" />
+                                <StatCard title="Vencidos" value={clients.filter(c => getClientStatus(c.dueDate).status === 'expired').length} icon={<AlertTriangle size={24} />} color="red" />
+                                <StatCard title="Vence Hoje" value={clients.filter(c => getClientStatus(c.dueDate).status === 'today').length} icon={<Calendar size={24} />} color="orange" />
+                                {user.role === 'ceo' && (
+                                    <>
+                                        <StatCard title="Masters" value={team.length} icon={<Shield size={24} />} color="purple" />
+                                        <StatCard title="Revendas na Rede" value={allResellersCount} icon={<Globe size={24} />} color="green" />
+                                    </>
+                                )}
+                                {user.role === 'master' && <StatCard title="Minhas Revendas" value={team.length} icon={<Shield size={24} />} color="purple" />}
+                            </div>
+                            <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                                <div className="p-6 border-b border-slate-800 flex justify-between items-center"><h3 className="font-bold">Próximos Vencimentos</h3><button onClick={() => setActiveTab('clients')} className="text-sm text-orange-500 hover:underline">Ver todos</button></div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm text-slate-400">
+                                        <thead className="bg-slate-950 text-slate-300 uppercase text-xs"><tr><th className="px-6 py-3">Nome</th><th className="px-6 py-3">Vencimento</th><th className="px-6 py-3">Status</th><th className="px-6 py-3 text-right">Ação</th></tr></thead>
+                                        <tbody>
+                                            {clients.filter(c => ['expired','today','expiring'].includes(getClientStatus(c.dueDate).status)).slice(0, 5).map(client => {
+                                                    const { label, color } = getClientStatus(client.dueDate);
+                                                    return <tr key={client.id} className="border-b border-slate-800 hover:bg-slate-800/50"><td className="px-6 py-4 font-medium text-white">{client.name}</td><td className="px-6 py-4">{formatDate(client.dueDate)}</td><td className="px-6 py-4"><span className={`bg-${color}-500/20 text-${color}-400 px-2 py-1 rounded text-xs font-bold`}>{label}</span></td><td className="px-6 py-4 text-right"><button onClick={() => handleRenewClient(client)} className="p-1.5 bg-green-600 text-white rounded hover:bg-green-500"><RefreshCw size={14} /></button></td></tr>
+                                            })}
+                                            {clients.length === 0 && <tr><td colSpan="4" className="px-6 py-8 text-center">Nenhum cliente para mostrar.</td></tr>}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'clients' && (
+                        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden flex flex-col h-[calc(100vh-180px)]">
+                            <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row gap-4 justify-between items-center bg-slate-900/50">
+                                <div className="relative w-full md:w-1/3"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar cliente..." className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2 pl-10 text-white focus:border-orange-500 outline-none" /></div>
+                                <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">{[{ id: 'all', label: 'Todos' }, { id: 'active', label: 'Ativos' }, { id: 'expired', label: 'Vencidos' }, { id: 'expiring', label: 'Vencendo' }].map(f => (<button key={f.id} onClick={() => setFilterStatus(f.id)} className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${filterStatus === f.id ? 'bg-orange-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>{f.label}</button>))}</div>
+                            </div>
+                            <div className="overflow-auto flex-1">
+                                <table className="w-full text-left text-sm text-slate-400">
+                                    <thead className="bg-slate-950 text-slate-300 uppercase text-xs sticky top-0 z-10 shadow-sm"><tr><th className="px-6 py-3 bg-slate-950">Cliente</th><th className="px-6 py-3 bg-slate-950">Vencimento</th><th className="px-6 py-3 bg-slate-950">Status</th><th className="px-6 py-3 bg-slate-950 text-right">Ações Rápidas</th></tr></thead>
+                                    <tbody className="divide-y divide-slate-800">
+                                        {filteredClients.map(client => {
+                                            const { label, color } = getClientStatus(client.dueDate);
+                                            const waLink = generateWhatsAppLink(client);
+                                            return (
+                                            <tr key={client.id} className="hover:bg-slate-800/30 transition-colors group">
+                                                <td className="px-6 py-4"><div className="flex items-center gap-3"><div className={`w-2 h-10 rounded-full bg-${color}-500`}></div><div><p className="font-bold text-white text-base">{client.name}</p><p className="text-xs text-slate-500">{client.username || 'Sem usuário'}</p></div></div></td>
+                                                <td className="px-6 py-4"><div className="flex flex-col"><span className="text-slate-300 font-medium">{formatDate(client.dueDate)}</span></div></td>
+                                                <td className="px-6 py-4"><span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-${color}-500/10 text-${color}-400 border border-${color}-500/20`}><div className={`w-1.5 h-1.5 rounded-full bg-${color}-500 animate-pulse`}></div>{label}</span></td>
+                                                <td className="px-6 py-4 text-right"><div className="flex items-center justify-end gap-2 opacity-80 group-hover:opacity-100">{waLink && <a href={waLink} target="_blank" rel="noopener noreferrer" className="p-2 bg-green-600/20 text-green-400 hover:bg-green-600 hover:text-white rounded-lg"><MessageCircle size={18} /></a>}<button onClick={() => handleRenewClient(client)} className="p-2 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg"><RefreshCw size={18} /></button><button onClick={() => openAddModal('client', client)} className="p-2 bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white rounded-lg"><Edit size={18} /></button><button onClick={() => handleDeleteClient(client.id)} className="p-2 bg-red-600/10 text-red-400 hover:bg-red-600 hover:text-white rounded-lg"><Trash2 size={18} /></button></div></td>
+                                            </tr>
+                                        )})}
+                                        {filteredClients.length === 0 && <tr><td colSpan="4" className="px-6 py-20 text-center flex flex-col items-center justify-center opacity-50"><Filter size={48} className="mb-4 text-slate-600"/><span className="text-lg font-medium text-slate-400">Nenhum cliente encontrado</span></td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'team' && (
+                        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                            <div className="p-6 border-b border-slate-800"><h3 className="font-bold text-white">{user.role === 'ceo' ? 'Lista de Masters' : 'Lista de Revendas'}</h3></div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm text-slate-400">
+                                    <thead className="bg-slate-950 text-slate-300 uppercase text-xs"><tr><th className="px-6 py-3">Nome/Email</th><th className="px-6 py-3">Função</th><th className="px-6 py-3">Créditos</th><th className="px-6 py-3">Status</th><th className="px-6 py-3 text-right">Ações</th></tr></thead>
+                                    <tbody>
+                                        {team.map(member => (
+                                            <tr key={member.id} className="border-b border-slate-800 hover:bg-slate-800/50">
+                                                <td className="px-6 py-4 font-medium text-white">{member.email}</td>
+                                                <td className="px-6 py-4"><RoleBadge role={member.role} /></td>
+                                                <td className="px-6 py-4"><span className="text-yellow-500 font-bold flex items-center gap-1"><DollarSign size={14}/> {member.credits || 0}</span></td>
+                                                <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs ${member.status === 'blocked' ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>{member.status === 'blocked' ? 'Bloqueado' : 'Ativo'}</span></td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button onClick={() => openAddModal('user', member)} className="p-2 bg-slate-700 text-slate-300 hover:bg-white hover:text-slate-900 rounded-lg transition-colors" title="Editar / Adicionar Créditos"><Edit size={16} /></button>
+                                                        <button onClick={() => handleToggleUserStatus(member)} className={`p-2 rounded-lg transition-colors ${member.status === 'blocked' ? 'bg-green-600/20 text-green-400 hover:bg-green-600 hover:text-white' : 'bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600 hover:text-white'}`} title={member.status === 'blocked' ? 'Desbloquear' : 'Bloquear'} >{member.status === 'blocked' ? <Unlock size={16} /> : <Lock size={16} />}</button>
+                                                        <button onClick={() => handleDeleteUser(member.id)} className="p-2 bg-red-600/10 text-red-400 hover:bg-red-600 hover:text-white rounded-lg transition-colors" title="Excluir"><Trash2 size={16} /></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {team.length === 0 && <tr><td colSpan="5" className="px-6 py-12 text-center">Nenhum usuário encontrado.</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {isAddModalOpen && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h2 className="text-xl font-bold text-white">{modalType === 'client' ? (editingItem ? 'Editar Cliente' : 'Novo Cliente') : (editingItem ? 'Editar Revenda/Master' : (user.role === 'ceo' ? 'Novo Master' : 'Nova Revenda'))}</h2>
+                                    <button onClick={() => setIsAddModalOpen(false)}><XCircle size={24} className="text-slate-400 hover:text-white"/></button>
+                                </div>
+                                <form onSubmit={handleSaveItem} className="space-y-4">
+                                    {modalType === 'client' ? (
+                                        <>
+                                            <div><label className="text-xs text-slate-400">Nome</label><input required value={formData.name || ''} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white focus:border-orange-500 outline-none" onChange={e => setFormData({...formData, name: e.target.value})}/></div>
+                                            <div><label className="text-xs text-slate-400">WhatsApp</label><input value={formData.whatsapp || ''} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white focus:border-orange-500 outline-none" onChange={e => setFormData({...formData, whatsapp: e.target.value})}/></div>
+                                            <div><label className="text-xs text-slate-400">Vencimento</label><input type="date" required value={formData.dueDate || ''} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white focus:border-orange-500 outline-none" onChange={e => setFormData({...formData, dueDate: e.target.value})}/></div>
+                                            <div><label className="text-xs text-slate-400">Usuário IPTV</label><input value={formData.username || ''} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white focus:border-orange-500 outline-none" onChange={e => setFormData({...formData, username: e.target.value})}/></div>
+                                            <div><label className="text-xs text-slate-400">Notas</label><textarea value={formData.notes || ''} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white focus:border-orange-500 outline-none" rows="2" onChange={e => setFormData({...formData, notes: e.target.value})}/></div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div><label className="text-xs text-slate-400">Nome</label><input required value={formData.name || ''} className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white focus:border-orange-500 outline-none" onChange={e => setFormData({...formData, name: e.target.value})}/></div>
+                                            <div><label className="text-xs text-slate-400">E-mail</label><input type="email" required value={formData.email || ''} disabled={!!editingItem} className={`w-full bg-slate-950 border border-slate-800 rounded p-2 text-white focus:border-orange-500 outline-none ${editingItem ? 'opacity-50 cursor-not-allowed' : ''}`} onChange={e => setFormData({...formData, email: e.target.value})}/></div>
+                                            <div><label className="text-xs text-slate-400 font-bold text-orange-400">Créditos (Saldo)</label><input type="number" value={formData.credits || 0} className="w-full bg-slate-950 border border-orange-500/50 rounded p-2 text-white focus:border-orange-500 outline-none font-bold text-lg" onChange={e => setFormData({...formData, credits: e.target.value})}/></div>
+                                        </>
+                                    )}
+                                    <button type="submit" className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded transition-colors">{editingItem ? 'Salvar Alterações' : 'Cadastrar'}</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+                  </main>
+                </div>
+              )}
+            </>
+          );
+        }
+
+        // Renderizar o App
+        const root = createRoot(document.getElementById('root'));
+        root.render(<FireTVManager />);
+    </script>
+</body>
+</html>
