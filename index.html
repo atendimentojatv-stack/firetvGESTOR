@@ -73,7 +73,8 @@
           signOut,
           onAuthStateChanged,
           signInAnonymously,
-          signInWithCustomToken
+          signInWithCustomToken,
+          sendPasswordResetEmail // Importado para recuperação de senha
         } from 'firebase/auth';
         import { 
           getFirestore, 
@@ -96,7 +97,7 @@
           Smartphone, Globe, Settings, RefreshCw, MessageCircle, Filter, 
           AlertTriangle, DollarSign, Lock, Unlock, Eye, EyeOff, Clock, Ban,
           Save, Copy, Share2, FileText, Info, Pencil, Sparkles, Megaphone,
-          BarChart3, ArrowLeft, Send, BrainCircuit, MessageSquare
+          BarChart3, ArrowLeft, Send, BrainCircuit, MessageSquare, Infinity
         } from 'lucide-react';
 
         // --- API KEY GEMINI ---
@@ -259,7 +260,7 @@
                     <Zap size={14} className="fill-orange-500" /> Sistema Automático v2.0
                   </div>
                   <h1 className="text-5xl md:text-7xl font-black leading-tight mb-6 tracking-tight">
-                    Gerencie sua <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-600">Revenda IPTV</span>
+                    Gerencie seus <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-600">Clientes IPTV</span>
                   </h1>
                   <p className="text-slate-400 text-lg md:text-xl mb-10 max-w-2xl mx-auto leading-relaxed">
                     Painel completo para gestão de clientes, renovações automáticas, envio de comprovantes via WhatsApp e controle financeiro.
@@ -285,7 +286,8 @@
           const [loading, setLoading] = useState(false);
           const [error, setError] = useState('');
           const [showPassword, setShowPassword] = useState(false);
-          const [systemCode, setSystemCode] = useState('777'); 
+          const [systemCode, setSystemCode] = useState('777');
+          const [resetMode, setResetMode] = useState(false); // ESTADO PARA ESQUECI A SENHA
 
           if (!isOpen) return null;
 
@@ -335,6 +337,29 @@
              const userData = { id: snap.docs[0].id, ...snap.docs[0].data() };
              if (userData.status === 'blocked') throw new Error("Conta bloqueada. Contate o suporte.");
              return userData;
+          };
+
+          // FUNÇÃO DE RECUPERAÇÃO DE SENHA
+          const handleResetPassword = async (e) => {
+              e.preventDefault();
+              if (!email) {
+                  setError("Digite seu e-mail para recuperar a senha.");
+                  return;
+              }
+              setLoading(true);
+              try {
+                  await sendPasswordResetEmail(auth, email);
+                  setError("");
+                  alert("✅ E-mail de recuperação enviado!\nVerifique sua caixa de entrada e spam.");
+                  setResetMode(false); // Volta para o login
+              } catch (err) {
+                  let msg = err.message;
+                  if (msg.includes('user-not-found')) msg = "E-mail não cadastrado.";
+                  if (msg.includes('invalid-email')) msg = "E-mail inválido.";
+                  setError("Erro: " + msg);
+              } finally {
+                  setLoading(false);
+              }
           };
 
           const handleAuth = async (e) => {
@@ -406,40 +431,63 @@
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto fade-in">
               <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl my-8 relative">
                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-2xl font-bold text-white">{type === 'login' ? 'Acessar Painel' : 'Teste Grátis'}</h2>
+                    <h2 className="text-2xl font-bold text-white">{resetMode ? 'Recuperar Senha' : (type === 'login' ? 'Acessar Painel' : 'Teste Grátis')}</h2>
                     <button onClick={onClose}><XCircle size={24} className="text-slate-400 hover:text-white transition-colors"/></button>
                 </div>
                 {error && <div className="bg-red-500/10 border border-red-500/50 text-red-200 p-3 rounded-lg mb-4 text-sm flex items-start gap-2"><AlertTriangle size={16} className="mt-0.5 shrink-0"/> {error}</div>}
-                <form onSubmit={handleAuth} className="space-y-4">
-                  <div>
-                      <label className="text-xs text-slate-400 ml-1 font-semibold uppercase">E-mail</label>
-                      <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none transition-colors" placeholder="seu@email.com"/>
-                  </div>
-                  {type === 'register' && (
+                
+                {resetMode ? (
+                    <form onSubmit={handleResetPassword} className="space-y-4">
+                        <div>
+                            <label className="text-xs text-slate-400 ml-1 font-semibold uppercase">Digite seu E-mail</label>
+                            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none transition-colors" placeholder="seu@email.com"/>
+                        </div>
+                        <p className="text-xs text-slate-500">Enviaremos um link para você criar uma nova senha.</p>
+                        <button type="submit" disabled={loading} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3.5 rounded-lg hover:opacity-90 transition-all mt-4">
+                            {loading ? 'Enviando...' : 'Enviar Link de Recuperação'}
+                        </button>
+                        <button type="button" onClick={() => setResetMode(false)} className="w-full text-slate-400 hover:text-white text-sm mt-2">Voltar ao Login</button>
+                    </form>
+                ) : (
+                    <form onSubmit={handleAuth} className="space-y-4">
                       <div>
-                          <label className="text-xs text-slate-400 ml-1 font-semibold uppercase">WhatsApp (Com DDD)</label>
-                          <input type="text" required value={whatsapp} onChange={(e) => setWhatsapp(e.target.value.replace(/\D/g, ''))} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none transition-colors" placeholder="11999999999"/>
+                          <label className="text-xs text-slate-400 ml-1 font-semibold uppercase">E-mail</label>
+                          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none transition-colors" placeholder="seu@email.com"/>
                       </div>
-                  )}
-                  <div className="relative">
-                      <label className="text-xs text-slate-400 ml-1 font-semibold uppercase">Senha</label>
-                      <input type={showPassword ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none transition-colors" placeholder="******" minLength={6}/>
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-8 text-slate-500 hover:text-white transition-colors">{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button>
-                  </div>
-                  {type === 'register' && (
-                      <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 mt-2">
-                          <label className="text-xs text-orange-400 font-bold mb-2 block uppercase tracking-wider">Código de Liberação</label>
-                          <div className="flex gap-2 mb-2">
-                              <input type="text" required value={verificationCode} onChange={(e) => setVerificationCode(e.target.value)} className="flex-1 bg-slate-950 border border-slate-600 rounded-lg p-2 text-center text-white font-bold tracking-widest uppercase focus:border-green-500 outline-none text-lg" placeholder="CÓDIGO"/>
-                              <button type="button" onClick={openWhatsAppForCode} className="px-4 bg-green-600 hover:bg-green-500 text-white rounded-lg flex items-center justify-center transition-colors shadow-lg shadow-green-900/20" title="Pegar no WhatsApp"><MessageCircle size={24} /></button>
+                      {type === 'register' && (
+                          <div>
+                              <label className="text-xs text-slate-400 ml-1 font-semibold uppercase">WhatsApp (Com DDD)</label>
+                              <input type="text" required value={whatsapp} onChange={(e) => setWhatsapp(e.target.value.replace(/\D/g, ''))} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none transition-colors" placeholder="11999999999"/>
                           </div>
-                          <p className="text-[10px] text-slate-400 text-center leading-tight">Clique no botão verde para solicitar seu código gratuito via WhatsApp.</p>
+                      )}
+                      <div className="relative">
+                          <label className="text-xs text-slate-400 ml-1 font-semibold uppercase">Senha</label>
+                          <input type={showPassword ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-orange-500 outline-none transition-colors" placeholder="******" minLength={6}/>
+                          <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-8 text-slate-500 hover:text-white transition-colors">{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button>
                       </div>
-                  )}
-                  <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3.5 rounded-lg hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-orange-500/20 mt-4 flex justify-center items-center gap-2">
-                      {loading ? <RefreshCw size={20} className="animate-spin"/> : (type === 'login' ? 'Entrar no Painel' : 'Criar Conta Grátis')}
-                  </button>
-                </form>
+                      
+                      {/* LINK ESQUECI MINHA SENHA */}
+                      {type === 'login' && (
+                          <div className="text-right">
+                              <button type="button" onClick={() => setResetMode(true)} className="text-xs text-orange-500 hover:text-orange-400 font-semibold transition-colors">Esqueci minha senha</button>
+                          </div>
+                      )}
+
+                      {type === 'register' && (
+                          <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 mt-2">
+                              <label className="text-xs text-orange-400 font-bold mb-2 block uppercase tracking-wider">Código de Liberação</label>
+                              <div className="flex gap-2 mb-2">
+                                  <input type="text" required value={verificationCode} onChange={(e) => setVerificationCode(e.target.value)} className="flex-1 bg-slate-950 border border-slate-600 rounded-lg p-2 text-center text-white font-bold tracking-widest uppercase focus:border-green-500 outline-none text-lg" placeholder="CÓDIGO"/>
+                                  <button type="button" onClick={openWhatsAppForCode} className="px-4 bg-green-600 hover:bg-green-500 text-white rounded-lg flex items-center justify-center transition-colors shadow-lg shadow-green-900/20" title="Pegar no WhatsApp"><MessageCircle size={24} /></button>
+                              </div>
+                              <p className="text-[10px] text-slate-400 text-center leading-tight">Clique no botão verde para solicitar seu código gratuito via WhatsApp.</p>
+                          </div>
+                      )}
+                      <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3.5 rounded-lg hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-orange-500/20 mt-4 flex justify-center items-center gap-2">
+                          {loading ? <RefreshCw size={20} className="animate-spin"/> : (type === 'login' ? 'Entrar no Painel' : 'Criar Conta Grátis')}
+                      </button>
+                    </form>
+                )}
               </div>
             </div>
           );
@@ -701,6 +749,8 @@
               await signOut(auth).catch(()=>{});
               localStorage.removeItem('firetv_user_session');
               setUser(null);
+              setAiResponse(''); // LIMPEZA IA
+              setAiInput(''); // LIMPEZA IA
               setView('landing');
               setClients([]);
               setTeam([]);
@@ -727,14 +777,32 @@
                     setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                 }, (error) => console.log("Client listener err", error));
                 
+                // Ordenação via JavaScript para evitar erro de índice composto no Firebase
+                // (Ordena por createdAt ascendente)
                 if (user.role === 'ceo') {
                     const qTeam = query(getUsersCollection(), where('role', '==', teamFilter));
-                    unsub2 = onSnapshot(qTeam, (snapshot) => setTeam(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+                    unsub2 = onSnapshot(qTeam, (snapshot) => {
+                        const fetchedTeam = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        fetchedTeam.sort((a, b) => {
+                            const dateA = a.createdAt ? (a.createdAt.seconds || new Date(a.createdAt).getTime()) : 0;
+                            const dateB = b.createdAt ? (b.createdAt.seconds || new Date(b.createdAt).getTime()) : 0;
+                            return dateA - dateB; // Mais antigos primeiro (ascendente)
+                        });
+                        setTeam(fetchedTeam);
+                    });
                     const qAll = query(getUsersCollection(), where('role', '==', 'reseller'));
                     getDocs(qAll).then(s => setAllResellersCount(s.size)).catch(e => {});
                 } else if (user.role === 'master') {
                     const qTeam = query(getUsersCollection(), where('role', '==', 'reseller'), where('parentId', '==', user.email));
-                    unsub2 = onSnapshot(qTeam, (snapshot) => setTeam(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+                    unsub2 = onSnapshot(qTeam, (snapshot) => {
+                        const fetchedTeam = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        fetchedTeam.sort((a, b) => {
+                            const dateA = a.createdAt ? (a.createdAt.seconds || new Date(a.createdAt).getTime()) : 0;
+                            const dateB = b.createdAt ? (b.createdAt.seconds || new Date(b.createdAt).getTime()) : 0;
+                            return dateA - dateB; // Mais antigos primeiro (ascendente)
+                        });
+                        setTeam(fetchedTeam);
+                    });
                 }
             } catch(e) { console.error("Erro listener:", e); }
             return () => { unsub1(); unsub2(); };
@@ -765,10 +833,18 @@
           // ... (rest of handler functions: openAddModal, handleSaveItem, handleSaveConfig, etc. - same as before)
           const openAddModal = (type, itemToEdit = null) => {
             setModalType(type); setEditingItem(itemToEdit); setFormData(itemToEdit ? { ...itemToEdit } : {}); 
-            if (type === 'user' && !itemToEdit) setNewMemberRole('reseller'); 
+            if (type === 'user') {
+                if (itemToEdit) setNewMemberRole(itemToEdit.role);
+                else setNewMemberRole('reseller'); 
+            }
             setIsAddModalOpen(true);
           };
-          const handleSaveItem = async (e) => { e.preventDefault(); try { if (!user || !user.id) throw new Error("Sessão inválida."); if (modalType === 'client') { if (editingItem) { await updateDoc(doc(getClientsCollection(), editingItem.id), { ...formData }); showToast('Cliente atualizado!'); } else { await addDoc(getClientsCollection(), { ...formData, createdBy: user.email, createdAt: new Date().toISOString(), status: 'active' }); showToast('Cliente cadastrado!'); } } else { if (!editingItem) { const qCheck = query(getUsersCollection(), where('email', '==', formData.email)); const snap = await getDocs(qCheck); if (!snap.empty) throw new Error("Email já existe."); } if (editingItem) { await updateDoc(doc(getUsersCollection(), editingItem.id), { ...formData }); showToast('Atualizado!'); } else { let assignedRole = 'reseller'; if (user.role === 'ceo') assignedRole = newMemberRole; else if (user.role === 'master') assignedRole = 'reseller'; const exp = new Date(); exp.setDate(exp.getDate() + 30); await addDoc(getUsersCollection(), { ...formData, role: assignedRole, parentId: user.email, createdAt: serverTimestamp(), status: 'active', panelExpiration: exp.toISOString(), isInvite: true }); showToast(`Novo ${assignedRole === 'master' ? 'Master' : 'Revenda'} criado!`); } } setIsAddModalOpen(false); setFormData({}); setEditingItem(null); } catch (error) { showToast(error.message, 'error'); } };
+          const handleSaveItem = async (e) => { e.preventDefault(); try { if (!user || !user.id) throw new Error("Sessão inválida."); if (modalType === 'client') { if (editingItem) { await updateDoc(doc(getClientsCollection(), editingItem.id), { ...formData }); showToast('Cliente atualizado!'); } else { await addDoc(getClientsCollection(), { ...formData, createdBy: user.email, createdAt: new Date().toISOString(), status: 'active' }); showToast('Cliente cadastrado!'); } } else { if (!editingItem) { const qCheck = query(getUsersCollection(), where('email', '==', formData.email)); const snap = await getDocs(qCheck); if (!snap.empty) throw new Error("Email já existe."); } if (editingItem) { 
+                // ATUALIZAÇÃO DE USUÁRIO (Incluindo Promoção de Cargo)
+                let updateData = { ...formData };
+                if (user.role === 'ceo') updateData.role = newMemberRole; // CEO pode mudar role na edição
+                await updateDoc(doc(getUsersCollection(), editingItem.id), updateData); showToast('Atualizado!'); 
+            } else { let assignedRole = 'reseller'; if (user.role === 'ceo') assignedRole = newMemberRole; else if (user.role === 'master') assignedRole = 'reseller'; const exp = new Date(); exp.setDate(exp.getDate() + 30); await addDoc(getUsersCollection(), { ...formData, role: assignedRole, parentId: user.email, createdAt: serverTimestamp(), status: 'active', panelExpiration: exp.toISOString(), isInvite: true }); showToast(`Novo ${assignedRole === 'master' ? 'Master' : 'Revenda'} criado!`); } } setIsAddModalOpen(false); setFormData({}); setEditingItem(null); } catch (error) { showToast(error.message, 'error'); } };
           const handleSaveConfig = async (e) => { e.preventDefault(); try { await setDoc(getSettingsDoc(), { activationCode: configCode }, { merge: true }); showToast("Código atualizado!"); } catch (error) { showToast("Erro ao salvar.", 'error'); } };
           const handleSaveMessageConfig = async (e) => { e.preventDefault(); try { const updatedUser = { ...user, companyName: msgCompany, messageTemplates: msgTemplates }; await updateDoc(doc(getUsersCollection(), user.id), { companyName: msgCompany, messageTemplates: msgTemplates }); setUser(updatedUser); localStorage.setItem('firetv_user_session', JSON.stringify(updatedUser)); showToast("Configurações salvas!"); } catch (err) { showToast("Erro: " + err.message, 'error'); } };
           const handleDeleteUser = (id) => { setConfirmDialog({ isOpen: true, title: 'Excluir Usuário?', message: 'Esta ação removerá o acesso.', onConfirm: async () => { setIsProcessing(true); try { await deleteDoc(doc(getUsersCollection(), id)); showToast('Removido.'); setConfirmDialog({ isOpen: false }); } catch(e) { showToast(e.message, 'error'); } finally { setIsProcessing(false); } } }); };
@@ -777,6 +853,10 @@
           const handleRenewPanel = (tUser) => { setConfirmDialog({ isOpen: true, title: 'Renovar Painel', message: `Renovar painel de ${tUser.name} por 30 dias? (Zera tempo anterior)`, onConfirm: async () => { setIsProcessing(true); try { let exp = new Date(); exp.setDate(exp.getDate() + 30); const newDateIso = exp.toISOString(); await updateDoc(doc(getUsersCollection(), tUser.id), { panelExpiration: newDateIso, plan: 'renewed' }); setConfirmDialog({isOpen:false}); setRenewalPanelSuccessData({ user: tUser, newDate: newDateIso }); } catch(e){ showToast(e.message,'error'); } finally { setIsProcessing(false); } } }); };
           const filteredClients = useMemo(() => { return clients.filter(client => { const matchText = client.name?.toLowerCase().includes(searchTerm.toLowerCase()) || client.whatsapp?.includes(searchTerm); if (!matchText) return false; const { status } = getClientStatus(client.dueDate); if (filterStatus === 'all') return true; if (filterStatus === 'active') return status === 'active' || status === 'expiring' || status === 'today'; if (filterStatus === 'expired') return status === 'expired'; return true; }).sort((a, b) => new Date(a.dueDate || '2099-01-01') - new Date(b.dueDate || '2099-01-01')); }, [clients, searchTerm, filterStatus]);
           const RoleBadge = ({ role }) => { const labels = { ceo: 'CEO', master: 'MASTER', reseller: 'REVENDA' }; const colors = { ceo: 'border-red-500 text-red-400 bg-red-500/10', master: 'border-purple-500 text-purple-400 bg-purple-500/10', reseller: 'border-blue-500 text-blue-400 bg-blue-500/10' }; return <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${colors[role] || colors.reseller}`}>{labels[role]}</span>; };
+
+          // CONTADORES PARA OS BOTÕES DE FILTRO
+          const countActive = clients.filter(c => ['active', 'today', 'expiring'].includes(getClientStatus(c.dueDate).status)).length;
+          const countExpired = clients.filter(c => getClientStatus(c.dueDate).status === 'expired').length;
 
           if (initializing) return <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-orange-500 font-bold gap-4"><RefreshCw className="animate-spin" size={32}/> Carregando Sistema...</div>;
           const myDaysLeft = getDaysLeft(user?.panelExpiration);
@@ -804,7 +884,11 @@
                     </div>
                     <div className={`mx-4 mt-6 p-4 rounded-xl border flex flex-col gap-2 ${isTrial ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : myDaysLeft < 5 ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-slate-800/50 border-slate-700 text-slate-300'}`}>
                         <div className="flex items-center gap-2 mb-1"><Clock size={16} /><span className="text-[10px] font-bold uppercase tracking-wider">{isTrial ? 'Modo Teste' : 'Status do Painel'}</span></div>
-                        <div className="text-sm font-bold flex items-baseline gap-1"><span className="text-xl">{myDaysLeft}</span> dias restantes</div>
+                        {user.role === 'ceo' ? (
+                            <div className="text-sm font-bold flex items-center gap-1 text-orange-400"><Infinity size={24}/> Ilimitado</div>
+                        ) : (
+                            <div className="text-sm font-bold flex items-baseline gap-1"><span className="text-xl">{myDaysLeft}</span> dias restantes</div>
+                        )}
                     </div>
                     <div className="p-4 flex-1 space-y-2 mt-4">
                         <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeTab === 'dashboard' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}><LayoutDashboard size={18} /> Início</button>
@@ -826,7 +910,9 @@
                   <div className="md:hidden fixed top-0 w-full bg-slate-900/90 backdrop-blur z-30 border-b border-slate-800 px-4 py-3 flex justify-between items-center shadow-lg">
                       <span className="font-black flex items-center gap-2 tracking-tight"><Users size={20} className="text-orange-500"/> FIRE GESTOR</span>
                       <div className="flex items-center gap-3">
-                         <div className={`px-2 py-0.5 rounded text-[10px] font-bold border ${myDaysLeft < 5 ? 'border-red-500 text-red-400' : 'border-green-500 text-green-400'}`}>{myDaysLeft}d</div>
+                         <div className={`px-2 py-0.5 rounded text-[10px] font-bold border ${myDaysLeft < 5 ? 'border-red-500 text-red-400' : 'border-green-500 text-green-400'}`}>
+                             {user.role === 'ceo' ? <Infinity size={14}/> : myDaysLeft + 'd'}
+                         </div>
                          <button onClick={handleLogout} className="bg-slate-800 p-2 rounded-full text-slate-400 hover:text-white"><LogOut size={18}/></button>
                       </div>
                   </div>
@@ -920,7 +1006,7 @@
 
                                         <div className="flex-1 overflow-y-auto mb-4 space-y-4 pr-2">
                                             {aiResponse ? (
-                                                <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 prose prose-invert max-w-none">
+                                                <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 prose prose-invert max-w-none">
                                                     <div className="flex items-center gap-2 mb-4 text-purple-400 text-xs font-bold uppercase tracking-wider"><Sparkles size={12}/> Resposta Gerada</div>
                                                     <div className="whitespace-pre-wrap leading-relaxed text-slate-300 font-medium">{aiResponse}</div>
                                                     <button onClick={() => {navigator.clipboard.writeText(aiResponse); alert('Copiado!');}} className="mt-6 flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-white transition-colors"><Copy size={14}/> Copiar Resposta</button>
@@ -990,7 +1076,7 @@
                                         <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar por nome ou whats..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 text-white outline-none focus:border-orange-500 transition-colors text-sm" />
                                     </div>
                                     <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-hide">
-                                        {[{id:'all',l:'Todos'},{id:'active',l:'Ativos'},{id:'expired',l:'Vencidos'}].map(f=><button key={f.id} onClick={()=>setFilterStatus(f.id)} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${filterStatus===f.id?'bg-orange-500 text-white shadow-lg shadow-orange-500/20':'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>{f.l}</button>)}
+                                        {[{id:'all',l:`Todos (${clients.length})`}, {id:'active',l:`Ativos (${countActive})`}, {id:'expired',l:`Vencidos (${countExpired})`}].map(f=><button key={f.id} onClick={()=>setFilterStatus(f.id)} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${filterStatus===f.id?'bg-orange-500 text-white shadow-lg shadow-orange-500/20':'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>{f.l}</button>)}
                                     </div>
                                 </div>
                                 <div className="overflow-auto flex-1">
@@ -1138,8 +1224,11 @@
                                         <>
                                             <div><label className="text-xs font-bold text-slate-500 uppercase ml-1">Nome</label><input required placeholder="Nome do Usuário" value={formData.name||''} onChange={e=>setFormData({...formData,name:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white transition-colors"/></div>
                                             <div><label className="text-xs font-bold text-slate-500 uppercase ml-1">E-mail de Login</label><input required type="email" placeholder="usuario@email.com" value={formData.email||''} disabled={!!editingItem} onChange={e=>setFormData({...formData,email:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white transition-colors disabled:opacity-50"/></div>
-                                            {user.role === 'ceo' && !editingItem && (
-                                                <div><label className="text-xs font-bold text-slate-500 uppercase ml-1">Tipo de Conta</label><div className="flex gap-2 mt-1"><button type="button" onClick={() => setNewMemberRole('master')} className={`flex-1 py-2 rounded-lg text-sm font-bold border ${newMemberRole === 'master' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Master</button><button type="button" onClick={() => setNewMemberRole('reseller')} className={`flex-1 py-2 rounded-lg text-sm font-bold border ${newMemberRole === 'reseller' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Revenda</button></div></div>
+                                            {user.role === 'ceo' && (
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Tipo de Conta {editingItem && '(Alterar Cargo)'}</label>
+                                                    <div className="flex gap-2 mt-1"><button type="button" onClick={() => setNewMemberRole('master')} className={`flex-1 py-2 rounded-lg text-sm font-bold border ${newMemberRole === 'master' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Master</button><button type="button" onClick={() => setNewMemberRole('reseller')} className={`flex-1 py-2 rounded-lg text-sm font-bold border ${newMemberRole === 'reseller' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Revenda</button></div>
+                                                </div>
                                             )}
                                             {!editingItem && <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300 leading-relaxed"><Info size={14} className="inline mr-1 mb-0.5"/> O usuário poderá definir a senha no primeiro acesso clicando em "Teste Grátis" e usando o email cadastrado aqui.</div>}
                                         </>
