@@ -1373,18 +1373,55 @@
                                 <div className="max-w-2xl mx-auto mt-6 animate-fade-in">
                                     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl">
                                         <h2 className="text-xl md:text-2xl font-bold mb-6 flex items-center gap-3 text-white border-b border-slate-800 pb-4"><Lock size={24} className="text-indigo-500" /> Segurança da Conta</h2>
-                                        <form onSubmit={handleUpdateProfile} className="space-y-6">
+                                        <form onSubmit={handleUpdateProfile} className="space-y-6" autoComplete="off">
+                                            {/* O input hidden abaixo ajuda a enganar o autofill de alguns navegadores */}
+                                            <input type="text" style={{display:'none'}} />
+                                            <input type="password" style={{display:'none'}} />
+                                            
                                             <div>
                                                 <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Novo E-mail</label>
-                                                <div className="relative"><Mail className="absolute left-3 top-3 text-slate-500" size={18} /><input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 pl-10 text-white focus:border-indigo-500 outline-none transition-colors" placeholder={user.email}/></div>
+                                                <div className="relative">
+                                                    <Mail className="absolute left-3 top-3 text-slate-500" size={18} />
+                                                    <input 
+                                                        type="email" 
+                                                        value={newEmail} 
+                                                        onChange={(e) => setNewEmail(e.target.value)} 
+                                                        className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 pl-10 text-white focus:border-indigo-500 outline-none transition-colors" 
+                                                        placeholder={user.email}
+                                                        autoComplete="off"
+                                                        name="new-email-field-random-id"
+                                                    />
+                                                </div>
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Nova Senha</label>
-                                                <div className="relative"><Lock className="absolute left-3 top-3 text-slate-500" size={18} /><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 pl-10 text-white focus:border-indigo-500 outline-none transition-colors" placeholder="******" minLength={6}/></div>
+                                                <div className="relative">
+                                                    <Lock className="absolute left-3 top-3 text-slate-500" size={18} />
+                                                    <input 
+                                                        type="password" 
+                                                        value={newPassword} 
+                                                        onChange={(e) => setNewPassword(e.target.value)} 
+                                                        className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 pl-10 text-white focus:border-indigo-500 outline-none transition-colors" 
+                                                        placeholder="******" 
+                                                        minLength={6}
+                                                        autoComplete="new-password"
+                                                    />
+                                                </div>
                                             </div>
                                             <div className="pt-4 border-t border-slate-800">
                                                 <label className="block text-xs font-bold uppercase text-red-400 mb-2">Senha Atual (Obrigatório)</label>
-                                                <div className="relative"><Key className="absolute left-3 top-3 text-red-500" size={18} /><input type="password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full bg-slate-950 border border-red-900/50 rounded-xl py-3 pl-10 text-white focus:border-red-500 outline-none transition-colors placeholder-red-900/50" placeholder="Confirme sua senha atual"/></div>
+                                                <div className="relative">
+                                                    <Key className="absolute left-3 top-3 text-red-500" size={18} />
+                                                    <input 
+                                                        type="password" 
+                                                        required 
+                                                        value={currentPassword} 
+                                                        onChange={(e) => setCurrentPassword(e.target.value)} 
+                                                        className="w-full bg-slate-950 border border-red-900/50 rounded-xl py-3 pl-10 text-white focus:border-red-500 outline-none transition-colors placeholder-red-900/50" 
+                                                        placeholder="Confirme sua senha atual"
+                                                        autoComplete="current-password"
+                                                    />
+                                                </div>
                                             </div>
                                             <button type="submit" disabled={isProcessing} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2">
                                                 {isProcessing ? <LoadingSpinner /> : <Save size={18} />} Atualizar Conta
