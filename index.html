@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FIRE GESTOR - Sistema IPTV</title>
+    <title>FIRE GESTOR - Sistema IPTV + Bot</title>
     
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f97316' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='9' cy='7' r='4'/%3E%3Cpath d='M22 21v-2a4 4 0 0 0-3-3.87'/%3E%3Cpath d='M16 3.13a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E">
@@ -122,11 +122,10 @@
           AlertTriangle, DollarSign, Lock, Unlock, Eye, EyeOff, Clock, Ban,
           Save, Copy, Share2, FileText, Info, Pencil, Sparkles, Megaphone,
           BarChart3, ArrowLeft, Send, BrainCircuit, MessageSquare, Infinity, Mail, Key, UserCog,
-          ChevronRight, Wallet
+          ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff
         } from 'lucide-react';
 
         // --- CONFIGURAÇÕES & CONSTANTES ---
-        // A chave API agora é gerida pelo usuário via Configurações se rodar localmente
         const defaultApiKey = ""; 
         
         // Configuração Firebase
@@ -231,19 +230,14 @@
                 .replace(/{empresa}/g, company)
                 .replace(/{valor}/g, value);
                 
-            return encodeURIComponent(message);
+            return message;
         };
 
         const callGemini = async (prompt, userKey) => {
             try {
-                // Usa a chave do usuário (Config) ou a padrão (Ambiente)
                 const keyToUse = userKey || defaultApiKey;
-                
-                if (!keyToUse) {
-                    throw new Error("Nenhuma Chave API configurada. Vá em Configurações e adicione sua chave Google Gemini.");
-                }
+                if (!keyToUse) throw new Error("Nenhuma Chave API configurada. Vá em Configurações e adicione sua chave Google Gemini.");
 
-                // Tenta até 3 vezes com backoff
                 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
                 
                 for (let i = 0; i < 3; i++) {
@@ -256,7 +250,6 @@
                         
                         if (!response.ok) {
                             const errData = await response.json().catch(() => ({}));
-                            // Se for erro de chave inválida, não adianta tentar de novo
                             if (response.status === 400 || response.status === 403) {
                                 throw new Error(errData.error?.message || "Chave API inválida ou sem permissão.");
                             }
@@ -422,9 +415,8 @@
             const [searchTeamTerm, setSearchTeamTerm] = useState('');
             const [newMemberRole, setNewMemberRole] = useState('reseller');
 
-            // View Data States (Modais de visualização)
+            // View Data States
             const [viewClientData, setViewClientData] = useState(null);
-            const [viewTeamData, setViewTeamData] = useState(null);
             const [renewalSuccessData, setRenewalSuccessData] = useState(null);
             const [renewalPanelSuccessData, setRenewalPanelSuccessData] = useState(null);
 
@@ -434,17 +426,19 @@
             const [aiResponse, setAiResponse] = useState('');
             const [aiLoading, setAiLoading] = useState(false);
             const [aiEvent, setAiEvent] = useState('Futebol');
-            
-            // AI Custom Key
             const [userApiKey, setUserApiKey] = useState(localStorage.getItem('firetv_ai_key') || '');
 
-            // Config & Security States
+            // Config & Security
             const [msgCompany, setMsgCompany] = useState("Fire Gestor");
             const [msgTemplates, setMsgTemplates] = useState({});
             const [newEmail, setNewEmail] = useState('');
             const [newPassword, setNewPassword] = useState('');
             const [currentPassword, setCurrentPassword] = useState('');
-            const [mfaEnabled, setMfaEnabled] = useState(false);
+
+            // BOT WHATSAPP STATES (FIREBASE INTEGRATION)
+            // Agora cada revenda tem sua sessão no Firestore
+            const [botSession, setBotSession] = useState(null); // { status, qrCode }
+            const [isBotLoading, setIsBotLoading] = useState(false);
 
             const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
 
@@ -499,7 +493,6 @@
                 if (user) {
                     setMsgCompany(user.companyName || "Fire Gestor");
                     setMsgTemplates(user.messageTemplates || {});
-                    setMfaEnabled(user.mfaEnabled || false);
                 }
             }, [user]);
 
@@ -526,8 +519,8 @@
                     getDocs(query(getUsersCollection(), where('role', '==', 'reseller')))
                         .then(s => setAllResellersCount(s.docs.filter(d=>d.data().status !== 'deleted').length))
                         .catch(console.error);
-                } else if (user.role === 'master') {
-                    const qTeam = query(getUsersCollection(), where('role', '==', 'reseller'), where('parentId', '==', user.email));
+                } else {
+                    const qTeam = query(getUsersCollection(), where('parentId', '==', user.email));
                     unsubTeam = onSnapshot(qTeam, (s) => {
                         const list = s.docs
                             .map(d => ({ id: d.id, ...d.data() }))
@@ -537,8 +530,88 @@
                     });
                 }
 
-                return () => { unsubClients(); unsubTeam(); };
+                // LISTENER DO BOT (Firebase Integration)
+                // O bot na VPS deve ouvir este documento
+                const botSessionRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
+                const unsubBot = onSnapshot(botSessionRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setBotSession(docSnap.data());
+                        setIsBotLoading(false);
+                    } else {
+                        setBotSession({ status: 'disconnected' });
+                    }
+                });
+
+                return () => { unsubClients(); unsubTeam(); unsubBot(); };
             }, [user, view, teamFilter]);
+
+            // --- BOT WHATSAPP LOGIC (FIREBASE DATABASE) ---
+            // A lógica agora é escrever no Firestore e esperar o Bot da VPS (fire-bot) reagir
+
+            const connectBot = async () => {
+                setIsBotLoading(true);
+                try {
+                    const botSessionRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
+                    // Sinaliza para o bot iniciar a sessão
+                    // O Bot na VPS vai ler isso e gerar o QR Code real
+                    await setDoc(botSessionRef, { 
+                        action: 'start', 
+                        status: 'initializing',
+                        updatedAt: serverTimestamp() 
+                    }, { merge: true });
+                    
+                    // A SIMULAÇÃO FOI REMOVIDA. 
+                    // Agora o sistema vai ficar aguardando o Bot real atualizar o status no banco.
+                    
+                } catch (e) {
+                    showToast("Erro ao iniciar conexão: " + e.message, "error");
+                    setIsBotLoading(false);
+                }
+            };
+
+            const disconnectBot = async () => {
+                setIsBotLoading(true);
+                try {
+                    const botSessionRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
+                    await setDoc(botSessionRef, { 
+                        action: 'logout', 
+                        status: 'disconnecting',
+                        qrCode: null,
+                        updatedAt: serverTimestamp() 
+                    }, { merge: true });
+                    
+                    // Simulação removida. Aguarda o bot real confirmar a desconexão.
+                } catch (e) {
+                    showToast("Erro ao desconectar.", "error");
+                    setIsBotLoading(false);
+                }
+            };
+
+            const sendBotMessage = async (client) => {
+                if(botSession?.status !== 'connected') return showToast("Seu WhatsApp não está conectado!", "error");
+                
+                const text = generateWhatsAppMessage(client, user);
+                const phone = "55" + client.whatsapp.replace(/\D/g, '');
+                
+                setIsProcessing(true);
+                try {
+                    // Adiciona à fila de mensagens no Firestore
+                    // O bot da VPS deve ouvir esta coleção e processar
+                    await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), {
+                        to: phone,
+                        body: decodeURIComponent(text),
+                        type: 'text',
+                        status: 'pending',
+                        createdAt: serverTimestamp(),
+                        clientName: client.name
+                    });
+                    showToast(`Mensagem para ${client.name} enviada para a fila!`, "success");
+                } catch(e) {
+                    showToast("Erro ao enfileirar mensagem.", "error");
+                } finally {
+                    setIsProcessing(false);
+                }
+            };
 
             // --- AÇÕES CRUD ---
             
@@ -687,7 +760,6 @@
                         m = "Senha alterada com sucesso!";
                     }
                     
-                    await updateDoc(doc(getUsersCollection(), user.id), { mfaEnabled: mfaEnabled });
                     setNewEmail(''); setNewPassword(''); setCurrentPassword('');
                     showToast(m);
                 } catch (e) {
@@ -703,7 +775,6 @@
                 try {
                     const updatedUser = { ...user, companyName: msgCompany, messageTemplates: msgTemplates };
                     
-                    // Salva a chave da API no localStorage
                     if (userApiKey) {
                         localStorage.setItem('firetv_ai_key', userApiKey);
                     } else {
@@ -739,7 +810,7 @@
                     p = `Atue como Consultor de Negócios. Analise meus dados: Total de Clientes: ${clients.length}. Ativos: ${activeC}. Vencidos/Inativos: ${expiredC}. Me dê 3 estratégias práticas e curtas para aumentar a retenção e recuperar os vencidos.`;
                 }
 
-                const text = await callGemini(p, userApiKey); // Passa a chave do usuário
+                const text = await callGemini(p, userApiKey);
                 setAiResponse(text);
                 setAiLoading(false);
             };
@@ -769,12 +840,10 @@
             }), [clients]);
 
             const financialStats = useMemo(() => {
-                // Calcula o total de receita baseado nos clientes ATIVOS, VENCENDO ou EXPIRANDO
                 const activeRevenue = clients
                     .filter(c => ['active', 'today', 'expiring'].includes(getClientStatus(c.dueDate).status))
                     .reduce((acc, curr) => acc + (parseFloat(curr.value) || 0), 0);
                 
-                // Calcula o total perdido/pendente (clientes VENCIDOS)
                 const lostRevenue = clients
                     .filter(c => getClientStatus(c.dueDate).status === 'expired')
                     .reduce((acc, curr) => acc + (parseFloat(curr.value) || 0), 0);
@@ -803,7 +872,7 @@
                 );
             }
 
-            // --- SUB-COMPONENTES INTERNOS (MODAIS) ---
+            // --- SUB-COMPONENTES INTERNOS ---
             
             const AuthModal = () => {
                 const [email, setEmail] = useState('');
@@ -822,7 +891,7 @@
                         await sendEmailVerification(unverifiedUser);
                         await signOut(auth);
                         setShowAuthModal(false);
-                        setShowRegistrationSuccess(true); // Abre o modal verde
+                        setShowRegistrationSuccess(true);
                     } catch (e) {
                         setError("Erro ao reenviar. Tente novamente em alguns instantes.");
                     } finally {
@@ -845,14 +914,11 @@
                             await sendEmailVerification(cred.user);
                             await signOut(auth);
                             
-                            // Em vez de só fechar e dar toast, abrimos o Modal de Sucesso
                             setShowAuthModal(false);
                             setShowRegistrationSuccess(true);
                         } else {
-                            // LOGIN
                             const cred = await signInWithEmailAndPassword(auth, email, password);
                             
-                            // VALIDAÇÃO DE E-MAIL (COM IMUNIDADE PARA O CEO)
                             if (!cred.user.emailVerified && cred.user.email !== 'admin@firetv.com') {
                                 setUnverifiedUser(cred.user);
                                 throw new Error("E-mail não verificado.");
@@ -1024,7 +1090,7 @@
                              {[
                                  { id: 'dashboard', label: 'Início', icon: LayoutDashboard },
                                  { id: 'clients', label: 'Meus Clientes', icon: UserPlus },
-                                 { id: 'team', label: 'Equipe', icon: Shield, hide: user.role === 'reseller' },
+                                 { id: 'team', label: 'Equipe', icon: Shield }, // REMOVIDO: hide: user.role === 'reseller'
                                  { id: 'ai', label: 'Inteligência', icon: Sparkles, color: 'text-purple-400' },
                                  { id: 'settings', label: 'Configurações', icon: Settings },
                                  { id: 'profile', label: 'Perfil & Segurança', icon: UserCog }
@@ -1084,7 +1150,7 @@
                                         <StatCard title="Total Clientes" value={clients.length} icon={<UserPlus size={24} />} color="blue" />
                                         <StatCard title="Vencidos" value={stats.expired} icon={<AlertTriangle size={24} />} color="red" />
                                         <StatCard title="Vence Hoje" value={stats.today} icon={<Calendar size={24} />} color="orange" />
-                                        {user.role === 'ceo' ? <StatCard title="Revendas" value={allResellersCount} icon={<Globe size={24} />} color="green" /> : <div className="hidden md:block"></div>}
+                                        <StatCard title="Minha Equipe" value={team.length} icon={<Shield size={24} />} color="purple" />
                                     </div>
 
                                     {/* FINANCIAL DASHBOARD */}
@@ -1178,8 +1244,13 @@
                                                             <td className="px-6 py-4 text-right">
                                                                 <div className="flex items-center justify-end gap-2">
                                                                     {waLink && <a href={waLink} target="_blank" className="p-2 bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white rounded-lg transition-colors border border-green-600/20 hover:border-transparent"><MessageCircle size={18}/></a>}
+                                                                    
+                                                                    {/* Bot Button */}
+                                                                    {botSession?.status === 'connected' && (
+                                                                        <ActionButton onClick={()=>sendBotMessage(client)} color="purple" icon={Send} title="Enviar c/ Bot" />
+                                                                    )}
+
                                                                     <ActionButton onClick={()=>handleRenew(client, 'client')} color="blue" icon={RefreshCw} title="Renovar" />
-                                                                    <ActionButton onClick={()=>setViewClientData(client)} color="slate" icon={Eye} title="Ver" />
                                                                     <ActionButton onClick={()=>{setEditingItem(client); setFormData(client); setModalType('client'); setIsAddModalOpen(true);}} color="slate" icon={Edit} title="Editar" />
                                                                     <ActionButton onClick={()=>handleDelete(client.id, 'client')} color="red" icon={Trash2} title="Excluir" />
                                                                 </div>
@@ -1232,6 +1303,7 @@
                                                 })}
                                             </tbody>
                                         </table>
+                                        {filteredTeam.length === 0 && <div className="p-8 text-center text-slate-500">Nenhum membro encontrado.</div>}
                                     </div>
                                 </div>
                             )}
@@ -1316,7 +1388,64 @@
 
                             {/* SETTINGS CONTENT */}
                             {activeTab === 'settings' && (
-                                <div className="max-w-2xl mx-auto mt-6 animate-fade-in">
+                                <div className="max-w-4xl mx-auto mt-6 animate-fade-in grid md:grid-cols-2 gap-6">
+                                    
+                                    {/* COLUNA 1: WHATSAPP BOT (Multi-Tenant Session) */}
+                                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl">
+                                        <h2 className="text-xl md:text-2xl font-bold mb-6 flex items-center gap-3 text-white border-b border-slate-800 pb-4"><QrCode size={24} className="text-green-500" /> WhatsApp Pessoal</h2>
+                                        
+                                        <div className="space-y-6">
+                                            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-sm text-slate-400">
+                                                <p>Conecte <strong>seu WhatsApp de atendimento</strong> para enviar mensagens automáticas aos seus clientes.</p>
+                                            </div>
+
+                                            <div className="flex flex-col items-center justify-center py-4 min-h-[300px]">
+                                                {botSession?.status === 'connected' ? (
+                                                    <div className="text-center space-y-6 animate-fade-in">
+                                                        <div className="w-24 h-24 bg-green-500/20 rounded-full flex items-center justify-center mx-auto animate-pulse shadow-[0_0_30px_rgba(34,197,94,0.3)]">
+                                                            <Wifi size={48} className="text-green-500" />
+                                                        </div>
+                                                        <div>
+                                                            <h3 className="text-2xl font-black text-white mb-1">Conectado!</h3>
+                                                            <p className="text-green-400 text-sm font-bold">Pronto para enviar mensagens.</p>
+                                                        </div>
+                                                        <button onClick={disconnectBot} disabled={isBotLoading} className="w-full bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white px-6 py-3 rounded-xl border border-red-600/20 transition-all font-bold text-sm flex items-center justify-center gap-2">
+                                                            {isBotLoading ? <LoadingSpinner size={16}/> : <LogOut size={18}/>} Desconectar Sessão
+                                                        </button>
+                                                    </div>
+                                                ) : botSession?.status === 'qrcode' && botSession.qrCode ? (
+                                                    <div className="text-center space-y-6 animate-fade-in">
+                                                        <div className="bg-white p-4 rounded-xl inline-block shadow-xl">
+                                                            <img src={botSession.qrCode} alt="QR Code" className="w-56 h-56" />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-white font-bold mb-1">Escaneie com seu WhatsApp</p>
+                                                            <p className="text-xs text-slate-500">Menu > Aparelhos Conectados > Conectar</p>
+                                                        </div>
+                                                        <button onClick={disconnectBot} className="text-red-400 hover:text-red-300 text-xs underline">Cancelar</button>
+                                                    </div>
+                                                ) : botSession?.status === 'initializing' ? (
+                                                    <div className="text-center space-y-4 animate-fade-in">
+                                                        <LoadingSpinner size={40} color="text-green-500"/>
+                                                        <p className="text-slate-400 animate-pulse">Iniciando bot e gerando QR Code...</p>
+                                                        <p className="text-xs text-slate-600">Isso pode levar alguns segundos.</p>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center space-y-6 animate-fade-in">
+                                                        <div className="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center mx-auto border-2 border-dashed border-slate-700">
+                                                            <WifiOff size={40} className="text-slate-500" />
+                                                        </div>
+                                                        <p className="text-slate-400 text-sm max-w-xs mx-auto">Nenhuma sessão ativa. Clique abaixo para gerar um QR Code exclusivo para sua conta.</p>
+                                                        <button onClick={connectBot} disabled={isBotLoading} className="bg-green-600 hover:bg-green-500 text-white px-8 py-4 rounded-xl font-bold transition-all shadow-lg shadow-green-600/20 flex items-center gap-3 mx-auto hover:scale-105 transform">
+                                                            {isBotLoading ? <LoadingSpinner/> : <><QrCode size={20}/> Gerar QR Code</>}
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* COLUNA 2: CONFIGURAÇÕES DE MENSAGEM */}
                                     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl">
                                         <h2 className="text-xl md:text-2xl font-bold mb-6 flex items-center gap-3 text-white border-b border-slate-800 pb-4"><MessageCircle size={24} className="text-blue-500" /> Personalização WhatsApp</h2>
                                         <form onSubmit={handleSaveMessageConfig} className="space-y-6">
@@ -1356,9 +1485,6 @@
                                                         placeholder="Cole sua chave API aqui (Ex: AIzaSy...)"
                                                     />
                                                 </div>
-                                                <p className="text-[10px] text-slate-500 mt-2">
-                                                    Se a IA não funcionar, gere uma chave gratuita no <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-purple-400 hover:text-purple-300 underline">Google AI Studio</a> e cole acima.
-                                                </p>
                                             </div>
                                             <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2">
                                                 <Save size={18} /> Salvar Configurações
@@ -1374,7 +1500,6 @@
                                     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl">
                                         <h2 className="text-xl md:text-2xl font-bold mb-6 flex items-center gap-3 text-white border-b border-slate-800 pb-4"><Lock size={24} className="text-indigo-500" /> Segurança da Conta</h2>
                                         <form onSubmit={handleUpdateProfile} className="space-y-6" autoComplete="off">
-                                            {/* O input hidden abaixo ajuda a enganar o autofill de alguns navegadores */}
                                             <input type="text" style={{display:'none'}} />
                                             <input type="password" style={{display:'none'}} />
                                             
