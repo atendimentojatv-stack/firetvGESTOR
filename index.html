@@ -115,7 +115,7 @@
           AlertTriangle, DollarSign, Lock, Unlock, Eye, EyeOff, Clock, Ban,
           Save, Copy, Share2, FileText, Info, Pencil, Sparkles, Megaphone,
           BarChart3, ArrowLeft, Send, BrainCircuit, MessageSquare, Infinity, Mail, Key, UserCog,
-          ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff, Menu
+          ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff, Menu, Power
         } from 'lucide-react';
 
         // --- CONFIGURAÇÕES ---
@@ -445,8 +445,11 @@
                     if (u) {
                         if (!u.emailVerified && u.email !== 'admin@firetv.com') {
                             if (view === 'dashboard') {
+                                // Logout agressivo
                                 await signOut(auth);
-                                setUser(null); setView('landing');
+                                localStorage.removeItem('firetv_user_session');
+                                setUser(null); 
+                                setView('landing');
                                 showToast("Sessão expirada. Verifique seu e-mail.", "error");
                             }
                         } else if (!localStorage.getItem('firetv_user_session')) {
@@ -475,6 +478,19 @@
                 }
             }, [user]);
 
+            // --- LOGOUT AGRESSIVO (CORREÇÃO DE BUG MOBILE) ---
+            const handleLogout = async () => {
+                try {
+                    await signOut(auth);
+                    localStorage.removeItem('firetv_user_session'); // Limpa storage
+                    setUser(null);
+                    setView('landing');
+                    window.location.reload(); // Força recarregamento da página para limpar memória
+                } catch (e) {
+                    console.error("Erro logout", e);
+                }
+            };
+
             // --- DATA FETCHING ---
             useEffect(() => {
                 if (!user || !user.id || view !== 'dashboard') return;
@@ -484,15 +500,14 @@
                     setClients(s.docs.map(d => ({ id: d.id, ...d.data() })));
                 });
 
-                // CORREÇÃO AQUI: Removemos o filtro 'teamFilter' da query do Firestore
-                // Agora carregamos TODOS os membros de uma vez para a contagem estar certa
+                // Carrega TODOS da equipe sem filtro inicial
                 let unsubTeam = () => {};
                 if (user.role === 'ceo') {
-                    const qTeam = query(getUsersCollection()); // Pega todos
+                    const qTeam = query(getUsersCollection()); 
                     unsubTeam = onSnapshot(qTeam, (s) => {
                         const list = s.docs
                             .map(d => ({ id: d.id, ...d.data() }))
-                            .filter(u => u.status !== 'deleted' && u.email !== 'admin@firetv.com') // Filtra admin se quiser
+                            .filter(u => u.status !== 'deleted' && u.email !== 'admin@firetv.com')
                             .sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
                         setTeam(list);
                     });
@@ -507,6 +522,7 @@
                     });
                 }
 
+                // Listener do Bot (Cada usuário tem seu ID isolado)
                 const botSessionRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
                 const unsubBot = onSnapshot(botSessionRef, (docSnap) => {
                     if (docSnap.exists()) {
@@ -518,7 +534,7 @@
                 });
 
                 return () => { unsubClients(); unsubTeam(); unsubBot(); };
-            }, [user, view]); // Removemos teamFilter das dependências para não recarregar do banco
+            }, [user, view]);
 
             // --- BOT WHATSAPP ---
             const connectBot = async () => {
@@ -552,6 +568,21 @@
                 }
             };
 
+            const forceDisconnectBot = async () => {
+                if(window.confirm("Isso vai forçar a limpeza da sessão no banco de dados. Use se o bot estiver travado.")){
+                    setIsBotLoading(true);
+                    try {
+                        const botSessionRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
+                        await setDoc(botSessionRef, { status: 'disconnected', qrCode: null, action: 'force_logout' });
+                        showToast("Sessão resetada.");
+                    } catch(e){
+                        showToast("Erro ao resetar.", "error");
+                    } finally {
+                        setIsBotLoading(false);
+                    }
+                }
+            }
+
             const sendBotMessage = async (client) => {
                 if(botSession?.status !== 'connected') return showToast("Seu WhatsApp não está conectado!", "error");
                 
@@ -560,6 +591,7 @@
                 
                 setIsProcessing(true);
                 try {
+                    // Garante que escreve na pasta do usuário logado
                     await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), {
                         to: phone,
                         body: text,
@@ -756,7 +788,7 @@
                 }).sort((a, b) => new Date(a.dueDate || '2099-01-01') - new Date(b.dueDate || '2099-01-01'));
             }, [clients, searchTerm, filterStatus]);
 
-            // CORREÇÃO AQUI: O filtro acontece APENAS VISUALMENTE (Javascript), sem recarregar o banco
+            // FILTRO APENAS VISUAL
             const filteredTeam = useMemo(() => {
                 return team.filter(t => {
                     const matchSearch = t.name?.toLowerCase().includes(searchTeamTerm.toLowerCase()) || t.email?.toLowerCase().includes(searchTeamTerm.toLowerCase());
@@ -793,7 +825,7 @@
                             <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6"><Ban size={40} className="text-red-500" /></div>
                             <h2 className="text-3xl font-bold text-white mb-2">ACESSO BLOQUEADO</h2>
                             <p className="text-slate-400 mb-8 leading-relaxed">Seu painel <strong>expirou</strong>. Entre em contato com seu Master para renovar.</p>
-                            <button onClick={async () => { await signOut(auth); setUser(null); setView('landing'); }} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl transition-colors border border-slate-700">Sair da Conta</button>
+                            <button onClick={handleLogout} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl transition-colors border border-slate-700">Sair da Conta</button>
                         </div>
                     </div>
                 );
@@ -945,7 +977,7 @@
                                      <RoleBadge role={user.role} />
                                  </div>
                              </div>
-                             <button onClick={async () => { await signOut(auth); setUser(null); setView('landing'); }} className="w-full flex items-center justify-center gap-2 text-red-400 hover:bg-red-500/10 hover:text-red-300 p-2.5 rounded-lg text-sm font-bold transition-colors border border-transparent hover:border-red-500/20"><LogOut size={16} /> Sair</button>
+                             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-red-400 hover:bg-red-500/10 hover:text-red-300 p-2.5 rounded-lg text-sm font-bold transition-colors border border-transparent hover:border-red-500/20"><LogOut size={16} /> Sair</button>
                          </div>
                     </aside>
 
@@ -954,7 +986,7 @@
                         <span className="font-black flex items-center gap-2"><Users size={20} className="text-orange-500"/> FIRE GESTOR</span>
                         <div className="flex items-center gap-3">
                              <div className={`px-2 py-0.5 rounded text-[10px] font-bold border ${myDaysLeft < 5 ? 'border-red-500 text-red-400' : 'border-green-500 text-green-400'}`}>{user.role === 'ceo' ? <Infinity size={14}/> : myDaysLeft + 'd'}</div>
-                             <button onClick={async () => { await signOut(auth); setUser(null); setView('landing'); }} className="bg-slate-800 p-2 rounded-full text-slate-400"><LogOut size={18}/></button>
+                             <button onClick={handleLogout} className="bg-slate-800 p-2 rounded-full text-slate-400"><LogOut size={18}/></button>
                         </div>
                     </div>
 
@@ -984,7 +1016,6 @@
                                         <StatCard title="Total Clientes" value={clients.length} icon={<UserPlus size={24} />} color="blue" />
                                         <StatCard title="Vencidos" value={stats.expired} icon={<AlertTriangle size={24} />} color="red" />
                                         <StatCard title="Vence Hoje" value={stats.today} icon={<Calendar size={24} />} color="orange" />
-                                        {/* CORREÇÃO: team.length agora mostrará o total real (21) */}
                                         <StatCard title="Minha Equipe" value={team.length} icon={<Shield size={24} />} color="purple" />
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1239,6 +1270,7 @@
                                                             <div className="w-24 h-24 bg-green-500/20 rounded-full flex items-center justify-center mx-auto animate-pulse shadow-[0_0_30px_rgba(34,197,94,0.3)]"><Wifi size={48} className="text-green-500" /></div>
                                                             <div><h3 className="text-2xl font-black text-white mb-1">Conectado!</h3><p className="text-green-400 text-sm font-bold">Bot Ativo.</p></div>
                                                             <button onClick={disconnectBot} disabled={isBotLoading} className="w-full bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white px-6 py-3 rounded-xl border border-red-600/20 transition-all font-bold text-sm flex items-center justify-center gap-2">{isBotLoading ? <LoadingSpinner size={16}/> : <LogOut size={18}/>} Desconectar</button>
+                                                            <button onClick={forceDisconnectBot} className="text-slate-500 text-xs hover:text-white underline mt-4">Bot travado? Forçar Reset</button>
                                                         </div>
                                                     ) : botSession?.status === 'qrcode' && botSession.qrCode ? (
                                                         <div className="text-center space-y-6 animate-fade-in">
