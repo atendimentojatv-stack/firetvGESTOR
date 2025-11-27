@@ -20,10 +20,12 @@
                         'slide-in': 'slideIn 0.3s ease-out',
                         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                         'bounce-slow': 'bounce 2s infinite',
+                        'glow': 'glow 2s ease-in-out infinite alternate',
                     },
                     keyframes: {
                         fadeIn: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
-                        slideIn: { '0%': { transform: 'translateX(100%)' }, '100%': { transform: 'translateX(0)' } }
+                        slideIn: { '0%': { transform: 'translateX(100%)' }, '100%': { transform: 'translateX(0)' } },
+                        glow: { '0%': { boxShadow: '0 0 20px rgba(249, 115, 22, 0.5)' }, '100%': { boxShadow: '0 0 40px rgba(249, 115, 22, 0.8), 0 0 10px rgba(255,255,255,0.5)' } }
                     }
                 }
             }
@@ -115,7 +117,7 @@
           AlertTriangle, DollarSign, Lock, Unlock, Eye, EyeOff, Clock, Ban,
           Save, Copy, Share2, FileText, Info, Pencil, Sparkles, Megaphone,
           BarChart3, ArrowLeft, Send, BrainCircuit, MessageSquare, Infinity, Mail, Key, UserCog,
-          ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff, Menu, Power, X
+          ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff, Menu, Power, X, FileCode, Crown
         } from 'lucide-react';
 
         // --- CONFIGURAÇÕES ---
@@ -549,11 +551,10 @@
                 }
             };
 
-            // FUNÇÃO NOVA: CANCELAR CONEXÃO
+            // FUNÇÃO: CANCELAR CONEXÃO
             const cancelBotConnection = async () => {
                 try {
                     const botSessionRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
-                    // Força o status para desconectado imediatamente no banco
                     await setDoc(botSessionRef, { 
                         status: 'disconnected', 
                         action: 'idle', 
@@ -635,6 +636,9 @@
                             showToast('Cliente criado!');
                         }
                     } else {
+                        // SEGURANÇA: Bloqueia revenda de criar time
+                        if (user.role === 'reseller') throw new Error("Permissão negada: Revenda não pode criar equipe.");
+
                         if (editingItem) {
                             const uPayload = { ...formData };
                             if (user.role === 'ceo') uPayload.role = newMemberRole;
@@ -824,6 +828,10 @@
                 return { activeRevenue, lostRevenue };
             }, [clients]);
 
+            // PERMISSÃO PARA ADICIONAR NOVO
+            // Só CEO e Master podem ver o botão quando na aba 'team'. Na aba 'clients' todos veem.
+            const canAdd = activeTab === 'clients' || (activeTab === 'team' && (user?.role === 'ceo' || user?.role === 'master'));
+
             if (initializing) return <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-orange-500 gap-4"><LoadingSpinner size={40} /><p className="font-bold animate-pulse">Carregando Sistema...</p></div>;
 
             const myDaysLeft = getDaysLeft(user?.panelExpiration);
@@ -1012,7 +1020,8 @@
                                         </h1>
                                         <p className="text-slate-400 text-sm mt-1">{user.role === 'ceo' ? 'Painel Administrativo' : 'Gestão da Revenda'}</p>
                                     </div>
-                                    {(activeTab === 'clients' || activeTab === 'team') && (
+                                    {/* BOTÃO NOVO CADASTRO - SÓ APARECE PARA QUEM PODE */}
+                                    {canAdd && (
                                         <button onClick={() => { setModalType(activeTab === 'clients' ? 'client' : 'user'); setIsAddModalOpen(true); }} className="bg-orange-600 hover:bg-orange-500 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-orange-600/20 hover:scale-105 transition-all">
                                             <Plus size={20} /> Novo Cadastro
                                         </button>
@@ -1133,44 +1142,71 @@
 
                             {/* TEAM */}
                             {activeTab === 'team' && (
-                                <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl animate-fade-in">
-                                    <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row gap-4">
-                                        <div className="relative flex-1">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                                            <input type="text" value={searchTeamTerm} onChange={(e) => setSearchTeamTerm(e.target.value)} placeholder="Buscar membro..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 text-white outline-none focus:border-orange-500 transition-colors text-sm" />
-                                        </div>
-                                        {user.role === 'ceo' && (
-                                            <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
-                                                <button onClick={()=>setTeamFilter('master')} className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${teamFilter==='master'?'bg-purple-600 text-white':'text-slate-400 hover:text-white'}`}>Masters</button>
-                                                <button onClick={()=>setTeamFilter('reseller')} className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${teamFilter==='reseller'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}>Revendas</button>
+                                <div className="h-full">
+                                    {/* BLINDAGEM VISUAL PARA REVENDA */}
+                                    {user.role === 'reseller' ? (
+                                        <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] p-8 text-center space-y-8 animate-fade-in">
+                                            <div className="relative">
+                                                <div className="w-32 h-32 bg-gradient-to-r from-orange-500 to-red-600 rounded-full flex items-center justify-center animate-bounce-slow shadow-[0_0_60px_rgba(249,115,22,0.6)] z-10 relative">
+                                                    <Crown size={64} className="text-white drop-shadow-lg" />
+                                                </div>
+                                                <div className="absolute inset-0 bg-orange-500/30 rounded-full blur-xl animate-pulse"></div>
                                             </div>
-                                        )}
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left text-sm text-slate-400">
-                                            <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
-                                                <tr><th className="px-6 py-4">Membro</th><th className="px-6 py-4">Cargo</th><th className="px-6 py-4">Painel Expira</th><th className="px-6 py-4 text-right">Ações</th></tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-800">
-                                                {filteredTeam.map(m => {
-                                                    const dl = getDaysLeft(m.panelExpiration);
-                                                    return (
-                                                        <tr key={m.id} className="hover:bg-slate-800/50 transition-colors">
-                                                            <td className="px-6 py-4"><div className="text-white font-medium">{m.name}<br/><span className="text-[10px] text-slate-500 font-normal">{m.email}</span></div></td>
-                                                            <td className="px-6 py-4"><RoleBadge role={m.role} /></td>
-                                                            <td className="px-6 py-4 font-bold font-mono" style={{color: dl<5?'#ef4444':'#84cc16'}}>{dl} dias</td>
-                                                            <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                                                <ActionButton onClick={()=>handleRenew(m, 'user')} color="blue" icon={RefreshCw} title="Renovar Painel" />
-                                                                <ActionButton onClick={()=>{setEditingItem(m); setFormData(m); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} title="Editar" />
-                                                                <ActionButton onClick={()=>handleDelete(m.id, 'user')} color="red" icon={Trash2} title="Excluir" />
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                        {filteredTeam.length === 0 && <div className="p-8 text-center text-slate-500">Nenhum membro encontrado.</div>}
-                                    </div>
+                                            
+                                            <div>
+                                                <h2 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-red-500 to-purple-600 animate-glow leading-tight mb-4 tracking-tighter">
+                                                    VIRE MASTER AGORA!
+                                                </h2>
+                                                <p className="text-xl text-slate-300 max-w-lg mx-auto leading-relaxed">
+                                                    Desbloqueie o poder de criar sua própria equipe de vendas. <br/><span className="text-orange-400 font-bold">Apenas Masters</span> podem abrir painéis de revenda e lucrar com a equipe.
+                                                </p>
+                                            </div>
+
+                                            <button className="px-10 py-5 bg-white text-black font-black text-xl rounded-full hover:scale-110 transition-transform shadow-[0_0_40px_rgba(255,255,255,0.3)] tracking-wide uppercase">
+                                                Falar com meu Master
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl animate-fade-in">
+                                            <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row gap-4">
+                                                <div className="relative flex-1">
+                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                                                    <input type="text" value={searchTeamTerm} onChange={(e) => setSearchTeamTerm(e.target.value)} placeholder="Buscar membro..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 text-white outline-none focus:border-orange-500 transition-colors text-sm" />
+                                                </div>
+                                                {user.role === 'ceo' && (
+                                                    <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                                                        <button onClick={()=>setTeamFilter('master')} className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${teamFilter==='master'?'bg-purple-600 text-white':'text-slate-400 hover:text-white'}`}>Masters</button>
+                                                        <button onClick={()=>setTeamFilter('reseller')} className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${teamFilter==='reseller'?'bg-blue-600 text-white':'text-slate-400 hover:text-white'}`}>Revendas</button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left text-sm text-slate-400">
+                                                    <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
+                                                        <tr><th className="px-6 py-4">Membro</th><th className="px-6 py-4">Cargo</th><th className="px-6 py-4">Painel Expira</th><th className="px-6 py-4 text-right">Ações</th></tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-800">
+                                                        {filteredTeam.map(m => {
+                                                            const dl = getDaysLeft(m.panelExpiration);
+                                                            return (
+                                                                <tr key={m.id} className="hover:bg-slate-800/50 transition-colors">
+                                                                    <td className="px-6 py-4"><div className="text-white font-medium">{m.name}<br/><span className="text-[10px] text-slate-500 font-normal">{m.email}</span></div></td>
+                                                                    <td className="px-6 py-4"><RoleBadge role={m.role} /></td>
+                                                                    <td className="px-6 py-4 font-bold font-mono" style={{color: dl<5?'#ef4444':'#84cc16'}}>{dl} dias</td>
+                                                                    <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                                                        <ActionButton onClick={()=>handleRenew(m, 'user')} color="blue" icon={RefreshCw} title="Renovar Painel" />
+                                                                        <ActionButton onClick={()=>{setEditingItem(m); setFormData(m); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} title="Editar" />
+                                                                        <ActionButton onClick={()=>handleDelete(m.id, 'user')} color="red" icon={Trash2} title="Excluir" />
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                                {filteredTeam.length === 0 && <div className="p-8 text-center text-slate-500">Nenhum membro encontrado.</div>}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -1202,6 +1238,15 @@
                                                     <h3 className="font-bold text-lg text-white mb-2">Consultor</h3>
                                                     <p className="text-sm text-slate-400">Análise de dados.</p>
                                                 </button>
+                                            </div>
+
+                                            {/* API KEY INPUT MOVED HERE */}
+                                            <div className="pt-6 border-t border-slate-800 mt-8">
+                                                 <div className="flex items-center gap-2 mb-4"><Key size={20} className="text-purple-500" /><h3 className="text-lg font-bold text-white">Chave de API (Gemini)</h3></div>
+                                                 <div className="flex gap-2">
+                                                     <input type="password" value={userApiKey} onChange={(e) => setUserApiKey(e.target.value)} className="flex-1 bg-slate-950 border border-purple-500/30 rounded-xl py-3 px-4 text-white focus:border-purple-500 outline-none transition-colors" placeholder="Cole sua chave API aqui"/>
+                                                     <button onClick={handleSaveMessageConfig} className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl transition-all shadow-lg shadow-purple-500/20">Salvar</button>
+                                                 </div>
                                             </div>
                                         </div>
                                     ) : (
@@ -1254,8 +1299,8 @@
                                                 </button>
                                                 <button onClick={()=>setSettingsView('messages')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-blue-500 hover:bg-slate-800/50 transition-all group text-left">
                                                     <div className="bg-blue-500/10 w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><MessageCircle className="text-blue-500" /></div>
-                                                    <h3 className="font-bold text-lg text-white mb-1">Mensagens & IA</h3>
-                                                    <p className="text-sm text-slate-400">Templates e API.</p>
+                                                    <h3 className="font-bold text-lg text-white mb-1">Mensagem Personalizada</h3>
+                                                    <p className="text-sm text-slate-400">Templates e Respostas.</p>
                                                 </button>
                                                 <button onClick={()=>setSettingsView('security')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-indigo-500 hover:bg-slate-800/50 transition-all group text-left">
                                                     <div className="bg-indigo-500/10 w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Lock className="text-indigo-500" /></div>
@@ -1294,7 +1339,6 @@
                                                         <div className="text-center space-y-4 animate-fade-in">
                                                             <LoadingSpinner size={40} color="text-green-500"/>
                                                             <p className="text-slate-400 animate-pulse">Gerando QR Code...</p>
-                                                            {/* BOTÃO CANCELAR ADICIONADO AQUI */}
                                                             <button onClick={cancelBotConnection} className="text-red-500 hover:text-red-400 text-xs font-bold bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/20 transition-colors mt-2">Cancelar</button>
                                                         </div>
                                                     ) : (
@@ -1312,8 +1356,22 @@
                                         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl">
                                             <div className="flex items-center gap-4 mb-6 pb-4 border-b border-slate-800">
                                                 <button onClick={()=>setSettingsView('menu')} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"><ArrowLeft size={20}/></button>
-                                                <h2 className="text-xl md:text-2xl font-bold flex items-center gap-3 text-white"><MessageCircle size={24} className="text-blue-500" /> Personalização</h2>
+                                                <h2 className="text-xl md:text-2xl font-bold flex items-center gap-3 text-white"><MessageCircle size={24} className="text-blue-500" /> Mensagem Personalizada</h2>
                                             </div>
+                                            
+                                            {/* GABARITO DE CÓDIGOS (CHEAT SHEET) */}
+                                            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 mb-6">
+                                                <div className="flex items-center gap-2 mb-3 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                                                    <FileCode size={14}/> Gabarito de Códigos (Variáveis)
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3 text-xs">
+                                                    <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{nome}`}</span> Nome Cliente</div>
+                                                    <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{valor}`}</span> Valor (R$)</div>
+                                                    <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{vencimento}`}</span> Data Venc.</div>
+                                                    <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{empresa}`}</span> Sua Empresa</div>
+                                                </div>
+                                            </div>
+
                                             <form onSubmit={handleSaveMessageConfig} className="space-y-6">
                                                 <div><label className="block text-xs font-bold uppercase text-slate-400 mb-2">Nome Empresa</label><input type="text" value={msgCompany} onChange={(e) => setMsgCompany(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:border-blue-500 outline-none transition-colors" placeholder="Ex: Top TV"/></div>
                                                 <div className="space-y-4">
@@ -1325,11 +1383,7 @@
                                                         </div>
                                                     ))}
                                                 </div>
-                                                <div className="pt-6 border-t border-slate-800">
-                                                     <div className="flex items-center gap-2 mb-4"><Sparkles size={20} className="text-purple-500" /><h3 className="text-lg font-bold text-white">Configuração IA</h3></div>
-                                                     <label className="block text-xs font-bold uppercase text-slate-400 mb-2">API Key (Gemini)</label>
-                                                     <input type="password" value={userApiKey} onChange={(e) => setUserApiKey(e.target.value)} className="w-full bg-slate-950 border border-purple-500/30 rounded-xl py-3 px-4 text-white focus:border-purple-500 outline-none transition-colors" placeholder="Cole sua chave API aqui"/>
-                                                </div>
+                                                
                                                 <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"><Save size={18} /> Salvar Configurações</button>
                                             </form>
                                         </div>
