@@ -115,7 +115,7 @@
           AlertTriangle, DollarSign, Lock, Unlock, Eye, EyeOff, Clock, Ban,
           Save, Copy, Share2, FileText, Info, Pencil, Sparkles, Megaphone,
           BarChart3, ArrowLeft, Send, BrainCircuit, MessageSquare, Infinity, Mail, Key, UserCog,
-          ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff, Menu, Power
+          ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff, Menu, Power, X
         } from 'lucide-react';
 
         // --- CONFIGURAÇÕES ---
@@ -445,7 +445,6 @@
                     if (u) {
                         if (!u.emailVerified && u.email !== 'admin@firetv.com') {
                             if (view === 'dashboard') {
-                                // Logout agressivo
                                 await signOut(auth);
                                 localStorage.removeItem('firetv_user_session');
                                 setUser(null); 
@@ -478,14 +477,14 @@
                 }
             }, [user]);
 
-            // --- LOGOUT AGRESSIVO (CORREÇÃO DE BUG MOBILE) ---
+            // --- LOGOUT AGRESSIVO ---
             const handleLogout = async () => {
                 try {
                     await signOut(auth);
-                    localStorage.removeItem('firetv_user_session'); // Limpa storage
+                    localStorage.removeItem('firetv_user_session'); 
                     setUser(null);
                     setView('landing');
-                    window.location.reload(); // Força recarregamento da página para limpar memória
+                    window.location.reload(); 
                 } catch (e) {
                     console.error("Erro logout", e);
                 }
@@ -500,7 +499,6 @@
                     setClients(s.docs.map(d => ({ id: d.id, ...d.data() })));
                 });
 
-                // Carrega TODOS da equipe sem filtro inicial
                 let unsubTeam = () => {};
                 if (user.role === 'ceo') {
                     const qTeam = query(getUsersCollection()); 
@@ -522,7 +520,6 @@
                     });
                 }
 
-                // Listener do Bot (Cada usuário tem seu ID isolado)
                 const botSessionRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
                 const unsubBot = onSnapshot(botSessionRef, (docSnap) => {
                     if (docSnap.exists()) {
@@ -549,6 +546,22 @@
                 } catch (e) {
                     showToast("Erro ao iniciar conexão: " + e.message, "error");
                     setIsBotLoading(false);
+                }
+            };
+
+            // FUNÇÃO NOVA: CANCELAR CONEXÃO
+            const cancelBotConnection = async () => {
+                try {
+                    const botSessionRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
+                    // Força o status para desconectado imediatamente no banco
+                    await setDoc(botSessionRef, { 
+                        status: 'disconnected', 
+                        action: 'idle', 
+                        qrCode: null
+                    }, { merge: true });
+                    showToast("Geração cancelada.");
+                } catch (e) {
+                    showToast("Erro ao cancelar.", "error");
                 }
             };
 
@@ -591,7 +604,6 @@
                 
                 setIsProcessing(true);
                 try {
-                    // Garante que escreve na pasta do usuário logado
                     await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), {
                         to: phone,
                         body: text,
@@ -788,7 +800,6 @@
                 }).sort((a, b) => new Date(a.dueDate || '2099-01-01') - new Date(b.dueDate || '2099-01-01'));
             }, [clients, searchTerm, filterStatus]);
 
-            // FILTRO APENAS VISUAL
             const filteredTeam = useMemo(() => {
                 return team.filter(t => {
                     const matchSearch = t.name?.toLowerCase().includes(searchTeamTerm.toLowerCase()) || t.email?.toLowerCase().includes(searchTeamTerm.toLowerCase());
@@ -1016,6 +1027,7 @@
                                         <StatCard title="Total Clientes" value={clients.length} icon={<UserPlus size={24} />} color="blue" />
                                         <StatCard title="Vencidos" value={stats.expired} icon={<AlertTriangle size={24} />} color="red" />
                                         <StatCard title="Vence Hoje" value={stats.today} icon={<Calendar size={24} />} color="orange" />
+                                        {/* CORREÇÃO: team.length agora mostrará o total real (21) */}
                                         <StatCard title="Minha Equipe" value={team.length} icon={<Shield size={24} />} color="purple" />
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1279,7 +1291,12 @@
                                                             <button onClick={disconnectBot} className="text-red-400 hover:text-red-300 text-xs underline">Cancelar</button>
                                                         </div>
                                                     ) : botSession?.status === 'initializing' ? (
-                                                        <div className="text-center space-y-4 animate-fade-in"><LoadingSpinner size={40} color="text-green-500"/><p className="text-slate-400 animate-pulse">Gerando QR Code...</p></div>
+                                                        <div className="text-center space-y-4 animate-fade-in">
+                                                            <LoadingSpinner size={40} color="text-green-500"/>
+                                                            <p className="text-slate-400 animate-pulse">Gerando QR Code...</p>
+                                                            {/* BOTÃO CANCELAR ADICIONADO AQUI */}
+                                                            <button onClick={cancelBotConnection} className="text-red-500 hover:text-red-400 text-xs font-bold bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/20 transition-colors mt-2">Cancelar</button>
+                                                        </div>
                                                     ) : (
                                                         <div className="text-center space-y-6 animate-fade-in">
                                                             <div className="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center mx-auto border-2 border-dashed border-slate-700"><WifiOff size={40} className="text-slate-500" /></div>
