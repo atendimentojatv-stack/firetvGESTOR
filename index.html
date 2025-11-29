@@ -521,41 +521,6 @@
             );
         };
 
-        // --- COMPONENTE LANDING (RESTAURADO) ---
-        const Landing = () => (
-            <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent"></div>
-                <nav className="container mx-auto px-6 py-6 flex justify-between items-center z-10">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-gradient-to-br from-orange-500 to-red-600 p-2 rounded-xl shadow-lg shadow-orange-500/20"><Users size={24} /></div>
-                        <span className="text-2xl font-black tracking-tighter">FIRE <span className="text-orange-500">GESTOR</span></span>
-                    </div>
-                    {/* O setAuthType e setShowAuthModal aqui precisam ser passados via props se Landing for extraído, 
-                        mas como está no escopo do arquivo, vamos usar um estado global simples ou injetar a lógica 
-                        se fosse um componente filho direto. 
-                        Para simplicidade neste arquivo único, vou assumir que o Landing recebe props. */}
-                </nav>
-                <div className="flex-1 container mx-auto px-4 flex flex-col items-center justify-center text-center z-10 pb-20">
-                    <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold text-xs uppercase tracking-wider animate-pulse-slow">
-                        <Zap size={14} className="fill-orange-500" /> Sistema Automático v2.0
-                    </div>
-                    <h1 className="text-5xl md:text-7xl font-black leading-tight mb-6 tracking-tight max-w-4xl">
-                        Gerencie seus <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-600">CLIENTES IPTV</span> Profissional
-                    </h1>
-                    <p className="text-slate-400 text-lg md:text-xl mb-10 max-w-2xl mx-auto leading-relaxed">
-                        Painel completo para gestão de clientes, renovações automáticas, envio de comprovantes via WhatsApp e controle financeiro.
-                    </p>
-                    {/* Botões simulados - A lógica real está no componente principal */}
-                    <div className="flex gap-4">
-                         <button className="px-8 py-4 bg-gradient-to-r from-orange-500 to-red-600 rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-xl shadow-orange-500/20 flex items-center gap-2 justify-center group">
-                            Acessar Sistema <ChevronRight className="group-hover:translate-x-1 transition-transform"/>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-
-
         // --- COMPONENTE PRINCIPAL ---
 
         const FireTVManager = () => {
@@ -607,6 +572,114 @@
             const [viewModeClient, setViewModeClient] = useState(false); // Para o olho do cliente/equipe
 
             const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
+
+            // --- TELAS INTERNAS (DEFINIDAS AQUI PARA TER ACESSO AO STATE) ---
+            const AuthModal = () => {
+                const [email, setEmail] = useState('');
+                const [password, setPassword] = useState('');
+                const [whatsapp, setWhatsapp] = useState('');
+                const [loading, setLoading] = useState(false);
+                const [error, setError] = useState('');
+                const [showPass, setShowPass] = useState(false);
+                const [resetMode, setResetMode] = useState(false);
+
+                const handleAuth = async (e) => {
+                    e.preventDefault();
+                    setLoading(true); setError('');
+                    try {
+                        if (resetMode) {
+                            await sendPasswordResetEmail(auth, email);
+                            showToast("Email de recuperação enviado!");
+                            setResetMode(false);
+                        } else if (authType === 'register') {
+                            if (whatsapp.length < 10) throw new Error("WhatsApp inválido.");
+                            const cred = await createUserWithEmailAndPassword(auth, email, password);
+                            await sendEmailVerification(cred.user);
+                            await signOut(auth);
+                            setShowAuthModal(false);
+                            setShowRegistrationSuccess(true);
+                        } else {
+                            const cred = await signInWithEmailAndPassword(auth, email, password);
+                            if (!cred.user.emailVerified && cred.user.email !== 'admin@firetv.com') throw new Error("E-mail não verificado.");
+                            
+                            const q = query(getUsersCollection(), where('email', '==', email));
+                            const snap = await getDocs(q);
+                            
+                            let userData;
+                            if (snap.empty) {
+                                if (email === 'admin@firetv.com') {
+                                    const exp = new Date(); exp.setDate(exp.getDate() + 3650);
+                                    const newU = { uid: cred.user.uid, email, role: 'ceo', parentId: 'system', createdAt: serverTimestamp(), name: 'Admin', status: 'active', plan: 'unlimited', panelExpiration: exp.toISOString() };
+                                    const ref = await addDoc(getUsersCollection(), newU);
+                                    userData = { id: ref.id, ...newU };
+                                } else {
+                                    const exp = new Date(); exp.setDate(exp.getDate() + 7);
+                                    const newU = { uid: cred.user.uid, email, role: 'reseller', parentId: 'system', createdAt: serverTimestamp(), name: email.split('@')[0], status: 'active', plan: 'trial', panelExpiration: exp.toISOString() };
+                                    const ref = await addDoc(getUsersCollection(), newU);
+                                    userData = { id: ref.id, ...newU };
+                                }
+                            } else {
+                                userData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                            }
+                            setUser(userData);
+                            setView('dashboard');
+                            localStorage.setItem('firetv_user_session', JSON.stringify(userData));
+                            setShowAuthModal(false);
+                        }
+                    } catch (err) {
+                        setError(err.message.includes('auth') ? 'Credenciais inválidas ou erro no sistema.' : err.message);
+                    } finally { setLoading(false); }
+                };
+
+                return (
+                    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                        <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
+                            <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white"><XCircle size={24}/></button>
+                            <h2 className="text-2xl font-bold text-white mb-6">{resetMode ? 'Recuperar Senha' : (authType === 'login' ? 'Bem-vindo de volta' : 'Criar nova conta')}</h2>
+                            {error && <div className="bg-red-500/10 border border-red-500/50 text-red-200 p-3 rounded-lg mb-4 text-sm flex items-center gap-2"><AlertTriangle size={16}/> {error}</div>}
+                            <form onSubmit={handleAuth} className="space-y-4">
+                                <div><label className="text-xs text-slate-400 font-bold ml-1">E-MAIL</label><input type="email" required value={email} onChange={e=>setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none focus:border-orange-500 transition-colors" placeholder="seu@email.com"/></div>
+                                {!resetMode && (
+                                    <>
+                                        {authType === 'register' && <div><label className="text-xs text-slate-400 font-bold ml-1">WHATSAPP</label><input type="tel" required value={whatsapp} onChange={e=>setWhatsapp(e.target.value.replace(/\D/g,''))} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none focus:border-orange-500 transition-colors" placeholder="11999999999"/></div>}
+                                        <div><label className="text-xs text-slate-400 font-bold ml-1">SENHA</label><input type="password" required value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none focus:border-orange-500 transition-colors" placeholder="******"/></div>
+                                    </>
+                                )}
+                                {authType === 'login' && !resetMode && <div className="text-right"><button type="button" onClick={()=>setResetMode(true)} className="text-xs text-orange-500 font-bold hover:underline">Esqueci a senha</button></div>}
+                                {resetMode && <div className="text-right"><button type="button" onClick={()=>setResetMode(false)} className="text-xs text-slate-400 font-bold hover:underline">Voltar ao login</button></div>}
+                                <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3.5 rounded-xl mt-2 flex justify-center items-center gap-2">{loading ? <LoadingSpinner /> : (resetMode ? 'Enviar Link' : (authType==='login'?'Acessar Painel':'Cadastrar'))}</button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            };
+
+            const Landing = () => (
+                <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent"></div>
+                    <nav className="container mx-auto px-6 py-6 flex justify-between items-center z-10">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-gradient-to-br from-orange-500 to-red-600 p-2 rounded-xl shadow-lg shadow-orange-500/20"><Users size={24} /></div>
+                            <span className="text-2xl font-black tracking-tighter">FIRE <span className="text-orange-500">GESTOR</span></span>
+                        </div>
+                        <button onClick={()=>{setAuthType('login'); setShowAuthModal(true)}} className="px-5 py-2 rounded-lg border border-slate-700 bg-slate-900/50 backdrop-blur text-slate-300 hover:text-white hover:border-orange-500 transition-all font-bold text-sm">Entrar</button>
+                    </nav>
+                    <div className="flex-1 container mx-auto px-4 flex flex-col items-center justify-center text-center z-10 pb-20">
+                        <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold text-xs uppercase tracking-wider animate-pulse-slow">
+                            <Zap size={14} className="fill-orange-500" /> Sistema Automático v2.0
+                        </div>
+                        <h1 className="text-5xl md:text-7xl font-black leading-tight mb-6 tracking-tight max-w-4xl">
+                            Gerencie seus <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-600">CLIENTES IPTV</span> Profissional
+                        </h1>
+                        <p className="text-slate-400 text-lg md:text-xl mb-10 max-w-2xl mx-auto leading-relaxed">
+                            Painel completo para gestão de clientes, renovações automáticas, envio de comprovantes via WhatsApp e controle financeiro.
+                        </p>
+                        <button onClick={()=>{setAuthType('register'); setShowAuthModal(true)}} className="px-8 py-4 bg-gradient-to-r from-orange-500 to-red-600 rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-xl shadow-orange-500/20 flex items-center gap-2 justify-center group">
+                            Teste Grátis 7 Dias <ChevronRight className="group-hover:translate-x-1 transition-transform"/>
+                        </button>
+                    </div>
+                </div>
+            );
 
             // INICIALIZAÇÃO
             useEffect(() => {
@@ -832,34 +905,7 @@
 
             if (initializing) return <div className="h-screen bg-slate-950 flex items-center justify-center text-orange-500"><LoadingSpinner size={40}/></div>;
             if (isExpired && user) return <div className="h-screen bg-slate-950 flex items-center justify-center p-4 text-center"><div className="bg-slate-900 p-8 rounded-2xl border border-red-500/50"><h2 className="text-3xl font-bold text-white mb-2">BLOQUEADO</h2><button onClick={handleLogout} className="bg-slate-800 text-white p-3 rounded">Sair</button></div></div>;
-            if (view === 'landing') return (
-                <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent"></div>
-                    <nav className="container mx-auto px-6 py-6 flex justify-between items-center z-10">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-gradient-to-br from-orange-500 to-red-600 p-2 rounded-xl shadow-lg shadow-orange-500/20"><Users size={24} /></div>
-                            <span className="text-2xl font-black tracking-tighter">FIRE <span className="text-orange-500">GESTOR</span></span>
-                        </div>
-                        <button onClick={()=>{setAuthType('login'); setShowAuthModal(true)}} className="px-5 py-2 rounded-lg border border-slate-700 bg-slate-900/50 backdrop-blur text-slate-300 hover:text-white hover:border-orange-500 transition-all font-bold text-sm">Entrar</button>
-                    </nav>
-                    <div className="flex-1 container mx-auto px-4 flex flex-col items-center justify-center text-center z-10 pb-20">
-                        <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold text-xs uppercase tracking-wider animate-pulse-slow">
-                            <Zap size={14} className="fill-orange-500" /> Sistema Automático v2.0
-                        </div>
-                        <h1 className="text-5xl md:text-7xl font-black leading-tight mb-6 tracking-tight max-w-4xl">
-                            Gerencie seus <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-600">CLIENTES IPTV</span> Profissional
-                        </h1>
-                        <p className="text-slate-400 text-lg md:text-xl mb-10 max-w-2xl mx-auto leading-relaxed">
-                            Painel completo para gestão de clientes, renovações automáticas, envio de comprovantes via WhatsApp e controle financeiro.
-                        </p>
-                        <button onClick={()=>{setAuthType('register'); setShowAuthModal(true)}} className="px-8 py-4 bg-gradient-to-r from-orange-500 to-red-600 rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-xl shadow-orange-500/20 flex items-center gap-2 justify-center group">
-                            Teste Grátis 7 Dias <ChevronRight className="group-hover:translate-x-1 transition-transform"/>
-                        </button>
-                    </div>
-                    {showAuthModal && <AuthModal />}
-                    {showRegistrationSuccess && <RegistrationSuccessModal onClose={()=>setShowRegistrationSuccess(false)} />}
-                </div>
-            );
+            if (view === 'landing') return <><Landing />{showAuthModal && <AuthModal />}{showRegistrationSuccess && <RegistrationSuccessModal onClose={()=>setShowRegistrationSuccess(false)} />}</>;
 
             return (
                 <div className="flex h-screen bg-slate-950 overflow-hidden">
