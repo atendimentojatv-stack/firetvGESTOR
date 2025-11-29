@@ -291,11 +291,15 @@
                     const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== '');
                     if (lines.length < 2) return alert("CSV inválido ou vazio.");
 
-                    const headers = lines[0].split(',').map(h => h.trim());
+                    // DETECÇÃO AUTOMÁTICA DE SEPARADOR (Vírgula ou Ponto e Vírgula)
+                    const firstLine = lines[0];
+                    const delimiter = firstLine.includes(';') ? ';' : ',';
+
+                    const headers = firstLine.split(delimiter).map(h => h.trim().replace(/"/g, ''));
                     setCsvHeaders(headers);
                     
                     const data = lines.slice(1).map(line => {
-                        const values = line.split(',').map(v => v.trim());
+                        const values = line.split(delimiter).map(v => v.trim().replace(/"/g, ''));
                         let obj = {};
                         headers.forEach((h, i) => obj[h] = values[i] || '');
                         return obj;
@@ -365,12 +369,19 @@
 
             const formatDateForImport = (dateStr) => {
                 if (!dateStr) return null;
-                const parts = dateStr.split('/');
+                
+                // Passo 1: Ignora a hora (pega tudo antes do primeiro espaço)
+                // Isso corta "05/01/2025 14:30" para "05/01/2025"
+                const dateOnly = dateStr.split(' ')[0].trim();
+
+                const parts = dateOnly.split('/');
                 if (parts.length === 3) {
                     // DD/MM/YYYY to YYYY-MM-DD
                     return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
                 }
-                return dateStr; // Assume YYYY-MM-DD
+                
+                // Se já estiver no formato YYYY-MM-DD ou outro, retorna como está (mas sem a hora)
+                return dateOnly; 
             };
 
             const exportToCSV = () => {
@@ -611,6 +622,7 @@
             // BOT WHATSAPP STATES
             const [botSession, setBotSession] = useState(null); 
             const [isBotLoading, setIsBotLoading] = useState(false);
+            const [botConnectionStatus, setBotConnectionStatus] = useState('disconnected'); // New state to track UI connection status
 
             const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
 
@@ -773,13 +785,59 @@
 
             useEffect(() => {
                 if (!user?.id) return;
-                const sse = new EventSource(`https://manus-meta-bot-e65a957d7b93.herokuapp.com/sessions/status/${user.id}`);
-                sse.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    setBotSession(data);
+                let eventSource;
+                let retryTimeout;
+
+                const startStream = () => {
+                    if (eventSource) eventSource.close();
+
+                    // Adicionado timestamp para evitar cache do navegador na conexão
+                    eventSource = new EventSource(`https://manus-meta-bot-e65a957d7b93.herokuapp.com/sessions/status/${user.id}?_t=${Date.now()}`);
+                    
+                    setBotConnectionStatus('connecting');
+
+                    eventSource.onopen = () => {
+                        setBotConnectionStatus('connected');
+                    };
+
+                    eventSource.onmessage = (event) => {
+                        try {
+                            if (event.data === 'ping') return; // Ignora pings de heartbeat se houver
+                            const data = JSON.parse(event.data);
+                            setBotSession(data);
+                        } catch (e) { console.error("Erro JSON SSE", e); }
+                    };
+
+                    // Adicionar listeners específicos caso o backend envie eventos nomeados
+                    eventSource.addEventListener('qrcode', (event) => {
+                         try {
+                            const data = JSON.parse(event.data);
+                            // Mesclar com o estado atual ou atualizar
+                            setBotSession(prev => ({...prev, status: 'qrcode', qrCode: data.qrCode || data})); 
+                        } catch (e) { console.error("Erro QRCODE SSE", e); }
+                    });
+
+                    eventSource.addEventListener('status', (event) => {
+                         try {
+                            const data = JSON.parse(event.data);
+                            setBotSession(prev => ({...prev, ...data})); 
+                        } catch (e) { console.error("Erro STATUS SSE", e); }
+                    });
+
+                    eventSource.onerror = (err) => {
+                        console.error("Erro SSE:", err);
+                        setBotConnectionStatus('disconnected');
+                        eventSource.close();
+                        retryTimeout = setTimeout(startStream, 5000); // Aumentado para 5s para evitar flood
+                    };
                 };
-                sse.onerror = () => { sse.close(); };
-                return () => sse.close();
+
+                startStream();
+
+                return () => {
+                    if (eventSource) eventSource.close();
+                    if (retryTimeout) clearTimeout(retryTimeout);
+                };
             }, [user]);
 
             const cancelBotConnection = () => {
@@ -1278,6 +1336,50 @@
                                             <div className="p-4 rounded-xl bg-red-500/10 text-red-500 border border-red-500/20"><Wallet size={24}/></div>
                                         </div>
                                     </div>
+
+                                    {/* TABELA DE VENCIMENTOS (RESTAURADA) */}
+                                    <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl mt-6">
+                                        <div className="p-6 border-b border-slate-800 flex items-center gap-2">
+                                            <AlertTriangle size={18} className="text-orange-500"/>
+                                            <h3 className="font-bold text-white">Atenção: Vencidos e Vencendo</h3>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left text-sm text-slate-400">
+                                                <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
+                                                    <tr>
+                                                        <th className="px-6 py-4">Cliente</th>
+                                                        <th className="px-6 py-4">Vencimento</th>
+                                                        <th className="px-6 py-4">Status</th>
+                                                        <th className="px-6 py-4 text-right">Ações</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-800">
+                                                    {clients
+                                                        .filter(c => ['expired', 'today', 'expiring'].includes(getClientStatus(c.dueDate).status))
+                                                        .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+                                                        .slice(0, 10) // Limit to top 10
+                                                        .map(client => {
+                                                            const { label, color } = getClientStatus(client.dueDate);
+                                                            const waLink = client.whatsapp ? `https://wa.me/55${client.whatsapp.replace(/\D/g,'')}?text=${generateWhatsAppMessage(client, user)}` : null;
+                                                            return (
+                                                                <tr key={client.id} className="hover:bg-slate-800/50 transition-colors">
+                                                                    <td className="px-6 py-4 font-medium text-white">{client.name}</td>
+                                                                    <td className="px-6 py-4 font-mono">{formatDate(client.dueDate)}</td>
+                                                                    <td className="px-6 py-4"><span className={`text-${color}-400 font-bold text-xs bg-${color}-500/10 px-2 py-1 rounded border border-${color}-500/20`}>{label}</span></td>
+                                                                    <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                                                        {waLink && <a href={waLink} target="_blank" className="p-2 hover:bg-slate-700 rounded text-green-500"><MessageCircle size={16}/></a>}
+                                                                        <button onClick={() => handleRenew(client, 'client')} className="p-2 hover:bg-slate-700 rounded text-blue-500"><RefreshCw size={16}/></button>
+                                                                    </td>
+                                                                </tr>
+                                                            )
+                                                        })}
+                                                    {clients.filter(c => ['expired', 'today', 'expiring'].includes(getClientStatus(c.dueDate).status)).length === 0 && (
+                                                        <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-500">Tudo em dia! Nenhuma pendência.</td></tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
 
@@ -1474,13 +1576,15 @@
                                         </div>
                                     </div>
 
-                                    {/* API KEY INPUT */}
-                                    {!userApiKey && (
-                                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6 flex items-center gap-4">
-                                            <input type="text" onChange={(e) => setUserApiKey(e.target.value)} placeholder="Cole sua Chave de API Gemini aqui..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500"/>
-                                            <button onClick={handleSaveMessageConfig} className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl">Salvar Chave</button>
+                                    {/* API KEY INPUT - SEMPRE VISIVEL PARA EDIÇÃO */}
+                                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
+                                        <h3 className="font-bold text-white mb-2 flex items-center gap-2"><Key size={18} className="text-yellow-500"/> Configuração da API (Gemini)</h3>
+                                        <div className="flex items-center gap-4">
+                                            <input type="text" value={userApiKey} onChange={(e) => setUserApiKey(e.target.value)} placeholder="Cole sua Chave de API Gemini aqui..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500 transition-colors" />
+                                            <button onClick={handleSaveMessageConfig} className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl transition-colors">Salvar</button>
                                         </div>
-                                    )}
+                                        <p className="text-xs text-slate-500 mt-2">A chave fica salva no seu navegador.</p>
+                                    </div>
 
                                     {/* AI VIEW SELECTOR */}
                                     <div className="grid md:grid-cols-3 gap-4 mb-6">
@@ -1575,8 +1679,11 @@
                                                 <h2 className="text-xl md:text-2xl font-bold flex items-center gap-3 text-white"><QrCode size={24} className="text-green-500" /> WhatsApp Bot</h2>
                                             </div>
                                             <div className="space-y-6">
-                                                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-sm text-slate-400">
+                                                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-sm text-slate-400 flex justify-between items-center">
                                                     <p>Conecte <strong>seu WhatsApp</strong> para envio automático. (Sessão Privada).</p>
+                                                    {botConnectionStatus === 'connecting' && <span className="text-yellow-500 text-xs animate-pulse">Sincronizando...</span>}
+                                                    {botConnectionStatus === 'connected' && <span className="text-green-500 text-xs">● Sincronizado</span>}
+                                                    {botConnectionStatus === 'disconnected' && <span className="text-red-500 text-xs">● Desconectado</span>}
                                                 </div>
                                                 <div className="flex flex-col items-center justify-center py-4 min-h-[300px]">
                                                     {botSession?.status === 'connected' ? (
@@ -1588,7 +1695,13 @@
                                                         </div>
                                                     ) : botSession?.status === 'qrcode' && botSession.qrCode ? (
                                                         <div className="text-center space-y-6 animate-fade-in">
-                                                            <div className="bg-white p-4 rounded-xl inline-block shadow-xl"><img src={botSession.qrCode} alt="QR Code" className="w-56 h-56" /></div>
+                                                            <div className="bg-white p-4 rounded-xl inline-block shadow-xl">
+                                                                <img 
+                                                                    src={botSession.qrCode.startsWith('data:') ? botSession.qrCode : `data:image/png;base64,${botSession.qrCode}`} 
+                                                                    alt="QR Code" 
+                                                                    className="w-56 h-56" 
+                                                                />
+                                                            </div>
                                                             <div><p className="text-white font-bold mb-1">Escaneie com seu WhatsApp</p><p className="text-xs text-slate-500">Aparelhos Conectados > Conectar</p></div>
                                                             <button onClick={disconnectBot} className="text-red-400 hover:text-red-300 text-xs underline">Cancelar</button>
                                                         </div>
