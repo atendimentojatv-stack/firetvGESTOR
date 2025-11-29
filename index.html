@@ -108,7 +108,8 @@
           serverTimestamp,
           getDocs,
           setDoc,
-          getDoc
+          getDoc,
+          writeBatch
         } from 'firebase/firestore';
         import { 
           Users, LayoutDashboard, LogOut, Plus, Search, UserPlus, Shield, 
@@ -117,7 +118,8 @@
           AlertTriangle, DollarSign, Lock, Unlock, Eye, EyeOff, Clock, Ban,
           Save, Copy, Share2, FileText, Info, Pencil, Sparkles, Megaphone,
           BarChart3, ArrowLeft, Send, BrainCircuit, MessageSquare, Infinity, Mail, Key, UserCog,
-          ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff, Menu, Power, X, FileCode, Crown
+          ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff, Menu, Power, X, FileCode, Crown,
+          Download, Upload, FileSpreadsheet, Check
         } from 'lucide-react';
 
         // --- CONFIGURAÇÕES ---
@@ -378,6 +380,177 @@
             </button>
         );
 
+        // --- COMPONENTE DE IMPORTAÇÃO (NOVO) ---
+        const ImportExportModal = ({ isOpen, onClose, onImport, onExport, isLoading, clients }) => {
+            const [step, setStep] = useState(1);
+            const [csvHeaders, setCsvHeaders] = useState([]);
+            const [csvData, setCsvData] = useState([]);
+            const [mapping, setMapping] = useState({ name: '', whatsapp: '', dueDate: '', value: '', username: '' });
+            const [importProgress, setImportProgress] = useState(0);
+
+            if (!isOpen) return null;
+
+            const handleFileRead = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const text = event.target.result;
+                    const lines = text.split(/\r\n|\n/).filter(line => line.trim() !== '');
+                    if (lines.length < 2) return alert("Arquivo vazio ou inválido");
+
+                    const headers = lines[0].split(/[;,]/).map(h => h.trim().replace(/"/g, ''));
+                    const data = lines.slice(1).map(line => {
+                        const values = line.split(/[;,]/).map(v => v.trim().replace(/"/g, ''));
+                        const obj = {};
+                        headers.forEach((h, i) => obj[h] = values[i]);
+                        return obj;
+                    });
+
+                    setCsvHeaders(headers);
+                    setCsvData(data);
+                    
+                    // Auto-mapping (Inteligência)
+                    const newMap = { ...mapping };
+                    headers.forEach(h => {
+                        const lower = h.toLowerCase();
+                        if (lower.includes('nome') || lower.includes('client') || lower.includes('name')) newMap.name = h;
+                        if (lower.includes('zap') || lower.includes('what') || lower.includes('cel') || lower.includes('tel') || lower.includes('fone')) newMap.whatsapp = h;
+                        if (lower.includes('venc') || lower.includes('date') || lower.includes('data') || lower.includes('expir')) newMap.dueDate = h;
+                        if (lower.includes('val') || lower.includes('pric') || lower.includes('preço')) newMap.value = h;
+                        if (lower.includes('usu') || lower.includes('user') || lower.includes('login')) newMap.username = h;
+                    });
+                    setMapping(newMap);
+                    setStep(2);
+                };
+                reader.readAsText(file, 'ISO-8859-1'); // Tenta ler como padrão Excel BR
+            };
+
+            const processImport = async () => {
+                setStep(3);
+                let count = 0;
+                const total = csvData.length;
+                const processedClients = [];
+
+                for (const row of csvData) {
+                    // Tratamento de Dados
+                    const name = row[mapping.name] || 'Sem Nome';
+                    let whatsapp = row[mapping.whatsapp] || '';
+                    whatsapp = whatsapp.replace(/\D/g, ''); // Limpa tudo que não é número
+
+                    let dueDate = row[mapping.dueDate];
+                    // Tenta converter datas DD/MM/AAAA ou DD-MM-AAAA para YYYY-MM-DD
+                    if (dueDate) {
+                        if (dueDate.includes('/')) {
+                            const parts = dueDate.split('/');
+                            if (parts.length === 3) dueDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                        }
+                    }
+
+                    let value = row[mapping.value];
+                    if (value) {
+                        value = value.replace('R$', '').replace('.', '').replace(',', '.').trim(); // Converte R$ 1.000,00 para 1000.00
+                    }
+
+                    processedClients.push({
+                        name,
+                        whatsapp,
+                        dueDate: dueDate || '',
+                        value: value || '0',
+                        username: row[mapping.username] || '',
+                        status: 'active'
+                    });
+                }
+                
+                await onImport(processedClients, (prog) => setImportProgress(prog));
+                setStep(1); // Reset para próxima
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[80] flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl p-6 shadow-2xl relative">
+                        <button onClick={onClose} className="absolute top-4 right-4 text-slate-500 hover:text-white"><X size={24}/></button>
+                        
+                        <h2 className="text-2xl font-bold text-white mb-1 flex items-center gap-2">
+                            <FileSpreadsheet className="text-green-500"/> Importar/Exportar
+                        </h2>
+                        <p className="text-slate-400 text-sm mb-6">Gerencie seus dados em massa.</p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* Lado Esquerdo: Exportar */}
+                            <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 flex flex-col items-center justify-center text-center">
+                                <div className="bg-blue-500/10 p-4 rounded-full mb-4">
+                                    <Download size={32} className="text-blue-500"/>
+                                </div>
+                                <h3 className="font-bold text-white mb-2">Backup de Clientes</h3>
+                                <p className="text-xs text-slate-500 mb-4">Baixe todos os seus {clients.length} clientes em CSV.</p>
+                                <button onClick={onExport} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg transition-colors">
+                                    Baixar Planilha
+                                </button>
+                            </div>
+
+                            {/* Lado Direito: Importar */}
+                            <div className="bg-slate-950 p-6 rounded-xl border border-slate-800">
+                                {step === 1 && (
+                                    <div className="text-center h-full flex flex-col justify-center">
+                                        <div className="bg-green-500/10 p-4 rounded-full mb-4 mx-auto w-fit">
+                                            <Upload size={32} className="text-green-500"/>
+                                        </div>
+                                        <h3 className="font-bold text-white mb-2">Importar Clientes</h3>
+                                        <p className="text-xs text-slate-500 mb-4">Traga clientes de outros painéis.</p>
+                                        <label className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg transition-colors cursor-pointer block">
+                                            Selecionar Arquivo CSV
+                                            <input type="file" accept=".csv" className="hidden" onChange={handleFileRead} />
+                                        </label>
+                                    </div>
+                                )}
+
+                                {step === 2 && (
+                                    <div className="space-y-3">
+                                        <h3 className="font-bold text-white text-sm">Vincule as Colunas</h3>
+                                        <div className="text-xs text-slate-400 mb-2">Identificamos {csvData.length} linhas.</div>
+                                        
+                                        {['name', 'whatsapp', 'dueDate', 'value', 'username'].map(field => (
+                                            <div key={field} className="flex flex-col">
+                                                <label className="text-[10px] font-bold uppercase text-slate-500 mb-1">
+                                                    {field === 'name' ? 'Nome' : field === 'whatsapp' ? 'WhatsApp' : field === 'dueDate' ? 'Vencimento' : field === 'value' ? 'Valor' : 'Usuário'}
+                                                </label>
+                                                <select 
+                                                    value={mapping[field]} 
+                                                    onChange={(e) => setMapping({...mapping, [field]: e.target.value})}
+                                                    className="bg-slate-900 border border-slate-700 text-white text-sm rounded-lg p-2 outline-none focus:border-green-500"
+                                                >
+                                                    <option value="">-- Ignorar --</option>
+                                                    {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                                                </select>
+                                            </div>
+                                        ))}
+
+                                        <button onClick={processImport} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg mt-2">
+                                            Confirmar Importação
+                                        </button>
+                                    </div>
+                                )}
+
+                                {step === 3 && (
+                                    <div className="text-center h-full flex flex-col justify-center items-center">
+                                        <LoadingSpinner size={40} color="text-green-500" />
+                                        <h3 className="font-bold text-white mt-4">Importando...</h3>
+                                        <div className="w-full bg-slate-800 rounded-full h-2.5 mt-2">
+                                            <div className="bg-green-500 h-2.5 rounded-full transition-all duration-300" style={{width: `${importProgress}%`}}></div>
+                                        </div>
+                                        <p className="text-xs text-slate-400 mt-2">{importProgress.toFixed(0)}% concluído</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+
         // --- COMPONENTE PRINCIPAL ---
 
         const FireTVManager = () => {
@@ -404,6 +577,9 @@
             const [teamFilter, setTeamFilter] = useState('master');
             const [searchTeamTerm, setSearchTeamTerm] = useState('');
             const [newMemberRole, setNewMemberRole] = useState('reseller');
+
+            // Import/Export States
+            const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
             // Config View State
             const [settingsView, setSettingsView] = useState('menu'); 
@@ -621,6 +797,60 @@
                 }
             };
 
+            // --- IMPORT/EXPORT LOGIC ---
+            const handleExport = () => {
+                const header = ["Nome", "WhatsApp", "Vencimento", "Valor", "Usuario", "Status"];
+                const rows = clients.map(c => [
+                    c.name,
+                    c.whatsapp,
+                    c.dueDate,
+                    c.value,
+                    c.username,
+                    getClientStatus(c.dueDate).status
+                ]);
+                
+                const csvContent = "data:text/csv;charset=utf-8," 
+                    + [header, ...rows].map(e => e.join(";")).join("\n");
+                
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `clientes_firegestor_${new Date().toISOString().slice(0,10)}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showToast("Planilha baixada com sucesso!");
+            };
+
+            const handleImport = async (dataToImport, updateProgress) => {
+                const batchSize = 50; 
+                let processed = 0;
+                
+                try {
+                    for (let i = 0; i < dataToImport.length; i += batchSize) {
+                        const chunk = dataToImport.slice(i, i + batchSize);
+                        const batch = writeBatch(db);
+                        
+                        chunk.forEach(client => {
+                            const ref = doc(getClientsCollection());
+                            batch.set(ref, {
+                                ...client,
+                                createdBy: user.email,
+                                createdAt: new Date().toISOString()
+                            });
+                        });
+                        
+                        await batch.commit();
+                        processed += chunk.length;
+                        updateProgress((processed / dataToImport.length) * 100);
+                    }
+                    showToast(`${processed} clientes importados!`, "success");
+                    setIsImportModalOpen(false);
+                } catch (e) {
+                    showToast("Erro na importação: " + e.message, "error");
+                }
+            };
+
             // --- CRUD ---
             const handleSaveItem = async (e) => {
                 e.preventDefault();
@@ -829,7 +1059,6 @@
             }, [clients]);
 
             // PERMISSÃO PARA ADICIONAR NOVO
-            // Só CEO e Master podem ver o botão quando na aba 'team'. Na aba 'clients' todos veem.
             const canAdd = activeTab === 'clients' || (activeTab === 'team' && (user?.role === 'ceo' || user?.role === 'master'));
 
             if (initializing) return <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-orange-500 gap-4"><LoadingSpinner size={40} /><p className="font-bold animate-pulse">Carregando Sistema...</p></div>;
@@ -964,6 +1193,7 @@
                 <div className="flex h-screen bg-slate-950 overflow-hidden">
                     <ToastNotification notification={notification} onClose={()=>setNotification({...notification, show: false})} />
                     <ConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={()=>setConfirmDialog({...confirmDialog, isOpen:false})} isLoading={isProcessing}/>
+                    <ImportExportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onImport={handleImport} onExport={handleExport} isLoading={isProcessing} clients={clients} />
                     
                     {/* Sidebar Desktop */}
                     <aside className="w-64 bg-slate-900 border-r border-slate-800 hidden md:flex flex-col z-20">
@@ -1020,12 +1250,20 @@
                                         </h1>
                                         <p className="text-slate-400 text-sm mt-1">{user.role === 'ceo' ? 'Painel Administrativo' : 'Gestão da Revenda'}</p>
                                     </div>
-                                    {/* BOTÃO NOVO CADASTRO - SÓ APARECE PARA QUEM PODE */}
-                                    {canAdd && (
-                                        <button onClick={() => { setModalType(activeTab === 'clients' ? 'client' : 'user'); setIsAddModalOpen(true); }} className="bg-orange-600 hover:bg-orange-500 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-orange-600/20 hover:scale-105 transition-all">
-                                            <Plus size={20} /> Novo Cadastro
-                                        </button>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                        {/* Botão de Importação apenas na aba Clientes */}
+                                        {activeTab === 'clients' && (
+                                            <button onClick={() => setIsImportModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2.5 rounded-xl flex items-center gap-2 font-bold border border-slate-700 transition-all text-sm">
+                                                <FileSpreadsheet size={18} /> <span className="hidden md:inline">Importar/Exportar</span>
+                                            </button>
+                                        )}
+                                        {/* BOTÃO NOVO CADASTRO */}
+                                        {canAdd && (
+                                            <button onClick={() => { setModalType(activeTab === 'clients' ? 'client' : 'user'); setIsAddModalOpen(true); }} className="bg-orange-600 hover:bg-orange-500 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-orange-600/20 hover:scale-105 transition-all text-sm">
+                                                <Plus size={20} /> Novo
+                                            </button>
+                                        )}
+                                    </div>
                                 </header>
                             )}
 
@@ -1036,7 +1274,6 @@
                                         <StatCard title="Total Clientes" value={clients.length} icon={<UserPlus size={24} />} color="blue" />
                                         <StatCard title="Vencidos" value={stats.expired} icon={<AlertTriangle size={24} />} color="red" />
                                         <StatCard title="Vence Hoje" value={stats.today} icon={<Calendar size={24} />} color="orange" />
-                                        {/* CORREÇÃO: team.length agora mostrará o total real (21) */}
                                         <StatCard title="Minha Equipe" value={team.length} icon={<Shield size={24} />} color="purple" />
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1240,7 +1477,6 @@
                                                 </button>
                                             </div>
 
-                                            {/* API KEY INPUT MOVED HERE */}
                                             <div className="pt-6 border-t border-slate-800 mt-8">
                                                  <div className="flex items-center gap-2 mb-4"><Key size={20} className="text-purple-500" /><h3 className="text-lg font-bold text-white">Chave de API (Gemini)</h3></div>
                                                  <div className="flex gap-2">
