@@ -567,8 +567,15 @@
                                         <button onClick={resetModal} className="absolute top-2 right-2 text-red-400 hover:text-red-300 p-2" title="Cancelar arquivo"><X size={18}/></button>
                                         <div className="space-y-2 h-64 overflow-y-auto custom-scrollbar">
                                             <h4 className="text-sm font-bold text-white mb-2">Vincule as colunas:</h4>
-                                            {['name', 'whatsapp', 'dueDate', 'value', 'username', 'observation'].map(field => (
-                                                <div key={field} className="flex flex-col"><label className="text-[10px] font-bold uppercase text-slate-500">{field}</label><select value={mapping[field]} onChange={(e) => setMapping({...mapping, [field]: e.target.value})} className="bg-slate-950 border border-slate-700 text-white text-sm rounded-lg p-2"><option value="">-- Ignorar --</option>{csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}</select></div>
+                                            {[
+                                                { key: 'name', label: 'Nome' },
+                                                { key: 'whatsapp', label: 'WhatsApp' },
+                                                { key: 'dueDate', label: 'Vencimento' },
+                                                { key: 'value', label: 'Valor' },
+                                                { key: 'username', label: 'Usuário' },
+                                                { key: 'observation', label: 'Observação' }
+                                            ].map(({ key, label }) => (
+                                                <div key={key} className="flex flex-col"><label className="text-[10px] font-bold uppercase text-slate-500">{label}</label><select value={mapping[key]} onChange={(e) => setMapping({...mapping, [key]: e.target.value})} className="bg-slate-950 border border-slate-700 text-white text-sm rounded-lg p-2"><option value="">-- Ignorar --</option>{csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}</select></div>
                                             ))}
                                             <button onClick={processImport} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg mt-2">Confirmar</button>
                                         </div>
@@ -697,12 +704,12 @@
                             if (snap.empty) {
                                 if (email === 'admin@firetv.com') {
                                     const exp = new Date(); exp.setDate(exp.getDate() + 3650);
-                                    const newU = { uid: cred.user.uid, email, role: 'ceo', parentId: 'system', createdAt: serverTimestamp(), name: 'Admin', status: 'active', plan: 'unlimited', panelExpiration: exp.toISOString() };
+                                    const newU = { uid: cred.user.uid, email, role: 'ceo', parentId: 'system', createdAt: serverTimestamp(), name: 'Admin', status: 'active', plan: 'unlimited', panelExpiration: exp.toISOString().split('T')[0] };
                                     const ref = await addDoc(getUsersCollection(), newU);
                                     userData = { id: ref.id, ...newU };
                                 } else {
                                     const exp = new Date(); exp.setDate(exp.getDate() + 7);
-                                    const newU = { uid: cred.user.uid, email, role: 'reseller', parentId: 'system', createdAt: serverTimestamp(), name: email.split('@')[0], status: 'active', plan: 'trial', panelExpiration: exp.toISOString() };
+                                    const newU = { uid: cred.user.uid, email, role: 'reseller', parentId: 'system', createdAt: serverTimestamp(), name: email.split('@')[0], status: 'active', plan: 'trial', panelExpiration: exp.toISOString().split('T')[0] };
                                     const ref = await addDoc(getUsersCollection(), newU);
                                     userData = { id: ref.id, ...newU };
                                 }
@@ -851,7 +858,24 @@
                 const link = document.createElement("a"); link.setAttribute("href", encodeURI(csvContent)); link.setAttribute("download", `clientes_${new Date().toISOString().slice(0,10)}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link);
             };
             const handleImport = async (data, updateProgress) => {
-                const batch = writeBatch(db); data.forEach(c => batch.set(doc(getClientsCollection()), { ...c, createdBy: user.email, createdAt: new Date().toISOString() })); await batch.commit(); showToast(`${data.length} importados!`, "success"); setIsImportModalOpen(false);
+                try {
+                    const batch = writeBatch(db);
+                    data.forEach(c => {
+                        const newDocRef = doc(getClientsCollection());
+                        batch.set(newDocRef, { 
+                            ...c, 
+                            createdBy: user.email, 
+                            createdAt: new Date().toISOString().split('T')[0],
+                            status: 'active'
+                        });
+                    });
+                    await batch.commit();
+                    showToast(`${data.length} cliente(s) importado(s) com sucesso!`, "success");
+                    setIsImportModalOpen(false);
+                } catch (error) {
+                    console.error('Erro na importação:', error);
+                    showToast(`Erro ao importar: ${error.message}`, "error");
+                }
             };
 
             // CRUD & ACTIONS
@@ -863,8 +887,8 @@
                         const payload = { ...formData };
                         if (editingItem) { await updateDoc(doc(getClientsCollection(), editingItem.id), payload); showToast('Atualizado!'); }
                         else { 
-                            const ref = await addDoc(getClientsCollection(), { ...payload, createdBy: user.email, createdAt: new Date().toISOString(), status: 'active' });
-                            if (parseFloat(payload.value) > 0) await addDoc(getTransactionsCollection(), { clientId: ref.id, clientName: payload.name, value: payload.value, date: new Date().toISOString(), type: 'adesao', createdBy: user.email });
+                            const ref = await addDoc(getClientsCollection(), { ...payload, createdBy: user.email, createdAt: new Date().toISOString().split('T')[0], status: 'active' });
+                            if (parseFloat(payload.value) > 0) await addDoc(getTransactionsCollection(), { clientId: ref.id, clientName: payload.name, value: payload.value, date: new Date().toISOString().split('T')[0], type: 'adesao', createdBy: user.email });
                             showToast('Criado!'); 
                         }
                     } else {
@@ -879,7 +903,7 @@
                         } else {
                             // Criação de membro... (simplificado para brevidade, mantém lógica anterior)
                             const exp = new Date(); exp.setDate(exp.getDate() + 30);
-                            await addDoc(getUsersCollection(), { ...formData, role: user.role === 'ceo' ? newMemberRole : 'reseller', parentId: user.email, createdAt: serverTimestamp(), status: 'active', panelExpiration: exp.toISOString(), plan: 'trial' });
+                            await addDoc(getUsersCollection(), { ...formData, role: user.role === 'ceo' ? newMemberRole : 'reseller', parentId: user.email, createdAt: serverTimestamp(), status: 'active', panelExpiration: exp.toISOString().split('T')[0], plan: 'trial' });
                             showToast('Convite criado!');
                         }
                     }
@@ -917,7 +941,7 @@
                             let e = new Date(item.panelExpiration);
                             if (isNaN(e.getTime()) || e < new Date()) e = new Date();
                             e.setDate(e.getDate() + 30);
-                            newDateIso = e.toISOString();
+                            newDateIso = e.toISOString().split('T')[0];
                             await updateDoc(doc(getUsersCollection(), item.id), { panelExpiration: newDateIso, plan: 'renewed' });
                             
                             // Mensagem para Equipe
@@ -935,7 +959,7 @@
                             const n = b.toISOString().split('T')[0];
                             newDateIso = n;
                             await updateDoc(doc(getClientsCollection(), item.id), { dueDate: n, status: 'active' });
-                            if (parseFloat(item.value) > 0) await addDoc(getTransactionsCollection(), { clientId: item.id, clientName: item.name, value: item.value, date: new Date().toISOString(), type: 'renovacao', createdBy: user.email });
+                            if (parseFloat(item.value) > 0) await addDoc(getTransactionsCollection(), { clientId: item.id, clientName: item.name, value: item.value, date: new Date().toISOString().split('T')[0], type: 'renovacao', createdBy: user.email });
                             
                             // Mensagem para Cliente
                             if (botSession?.status === 'connected') {
