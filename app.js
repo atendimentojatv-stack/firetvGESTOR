@@ -17,13 +17,7 @@ import {
   Infinity as InfinityIcon, Key, QrCode, Wifi, WifiOff, FileSpreadsheet, CheckSquare, Square
 } from 'lucide-react';
 
-// Importa os componentes visuais do arquivo vizinho
-import { 
-  Landing, LoadingSpinner, ToastNotification, ConfirmDialog, ImportExportModal, 
-  CelebrationModal, MessagePreviewModal, ActionButton, StatCard, RoleBadge, 
-  RegistrationSuccessModal, formatDate, formatCurrency, getDaysLeft, 
-  isPanelExpired, getClientStatus, generateWhatsAppMessage 
-} from './components.js';
+// --- ATENÇÃO: IMPORT REMOVIDO POIS USAMOS GLOBAIS (window) ---
 
 // --- CONFIGURAÇÕES FIREBASE ---
 const defaultApiKey = ""; 
@@ -51,9 +45,8 @@ const getTransactionsCollection = () => collection(db, 'artifacts', appId, 'publ
 // --- INTEGRAÇÃO IA (GEMINI) ---
 const callGemini = async (prompt, userKey) => {
     try {
-        const keyToUse = userKey; // Use a chave do usuário
+        const keyToUse = userKey;
         if (!keyToUse) throw new Error("Configure sua API Key nas Configurações > IA");
-
         const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
         for (let i = 0; i < 3; i++) {
             try {
@@ -72,21 +65,18 @@ const callGemini = async (prompt, userKey) => {
 
 // --- COMPONENTE PRINCIPAL ---
 const FireTVManager = () => {
-    // Estados Globais
     const [user, setUser] = useState(null);
     const [view, setView] = useState('landing');
     const [activeTab, setActiveTab] = useState('dashboard');
     const [initializing, setInitializing] = useState(true);
 
-    // Dados
     const [clients, setClients] = useState([]);
     const [team, setTeam] = useState([]);
     const [transactions, setTransactions] = useState([]);
 
-    // Modais e UI
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [showRegistrationSuccess, setShowRegistrationSuccess] = useState(false);
-    const [authType, setAuthType] = useState('login'); // 'login' ou 'register'
+    const [authType, setAuthType] = useState('login'); 
     const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
     const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -96,7 +86,6 @@ const FireTVManager = () => {
     const [celebrationData, setCelebrationData] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
 
-    // Filtros e Edição
     const [filterStatus, setFilterStatus] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
     const [formData, setFormData] = useState({});
@@ -104,14 +93,12 @@ const FireTVManager = () => {
     const [viewModeClient, setViewModeClient] = useState(false);
     const [selectedClientIds, setSelectedClientIds] = useState([]);
     
-    // Equipe e Finanças
     const [teamFilter, setTeamFilter] = useState('master');
     const [searchTeamTerm, setSearchTeamTerm] = useState('');
     const [newMemberRole, setNewMemberRole] = useState('reseller');
     const [financeMonth, setFinanceMonth] = useState(new Date().getMonth());
     const [financeYear, setFinanceYear] = useState(new Date().getFullYear());
 
-    // Configurações e IA
     const [settingsView, setSettingsView] = useState('menu');
     const [messageTab, setMessageTab] = useState('client');
     const [msgCompany, setMsgCompany] = useState("Fire Gestor");
@@ -123,18 +110,16 @@ const FireTVManager = () => {
     const [aiEvent, setAiEvent] = useState('Futebol');
     const [userApiKey, setUserApiKey] = useState(localStorage.getItem('firetv_ai_key') || '');
     
-    // Auth Update
     const [newEmail, setNewEmail] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [currentPassword, setCurrentPassword] = useState('');
 
-    // Bot Connection
     const [botSession, setBotSession] = useState(null);
     const [isBotLoading, setIsBotLoading] = useState(false);
 
     const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
 
-    // --- SUB-COMPONENTE: AUTH MODAL ---
+    // Auth Modal
     const AuthModal = () => {
         const [email, setEmail] = useState('');
         const [password, setPassword] = useState('');
@@ -157,13 +142,10 @@ const FireTVManager = () => {
                 } else {
                     const cred = await signInWithEmailAndPassword(auth, email, password);
                     if (!cred.user.emailVerified && cred.user.email !== 'admin@firetv.com') throw new Error("E-mail não verificado.");
-                    
                     const q = query(getUsersCollection(), where('email', '==', email));
                     const snap = await getDocs(q);
-                    
                     let userData;
                     if (snap.empty) {
-                         // Lógica de fallback/primeiro login
                         if (email === 'admin@firetv.com') {
                             const exp = new Date(); exp.setDate(exp.getDate() + 3650);
                             const newU = { uid: cred.user.uid, email, role: 'ceo', parentId: 'system', createdAt: serverTimestamp(), name: 'Admin', status: 'active', plan: 'unlimited', panelExpiration: exp.toISOString() };
@@ -174,7 +156,6 @@ const FireTVManager = () => {
                             const ref = await addDoc(getUsersCollection(), newU); userData = { id: ref.id, ...newU };
                         }
                     } else { userData = { id: snap.docs[0].id, ...snap.docs[0].data() }; }
-                    
                     setUser(userData); setView('dashboard');
                     localStorage.setItem('firetv_user_session', JSON.stringify(userData));
                     setShowAuthModal(false);
@@ -199,14 +180,13 @@ const FireTVManager = () => {
                         )}
                         {authType === 'login' && !resetMode && <div className="text-right"><button type="button" onClick={()=>setResetMode(true)} className="text-xs text-orange-500 font-bold hover:underline">Esqueci a senha</button></div>}
                         {resetMode && <div className="text-right"><button type="button" onClick={()=>setResetMode(false)} className="text-xs text-slate-400 font-bold hover:underline">Voltar</button></div>}
-                        <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3.5 rounded-xl mt-2 flex justify-center items-center gap-2">{loading ? <LoadingSpinner /> : (resetMode ? 'Enviar Link' : (authType==='login'?'Acessar':'Cadastrar'))}</button>
+                        <button type="submit" disabled={loading} className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3.5 rounded-xl mt-2 flex justify-center items-center gap-2">{loading ? <window.LoadingSpinner /> : (resetMode ? 'Enviar Link' : (authType==='login'?'Acessar':'Cadastrar'))}</button>
                     </form>
                 </div>
             </div>
         );
     };
 
-    // --- EFFECTS & LOGIC ---
     useEffect(() => {
         const init = async () => {
             const savedUser = localStorage.getItem('firetv_user_session');
@@ -262,19 +242,16 @@ const FireTVManager = () => {
         return () => { unsubClients(); unsubTeam(); unsubBot(); unsubTrans(); };
     }, [user, view]);
 
-    // --- ACTIONS ---
     const handleLogout = async () => { await signOut(auth); localStorage.removeItem('firetv_user_session'); setUser(null); setView('landing'); window.location.reload(); };
 
-    // Bot Actions
     const connectBot = async () => { setIsBotLoading(true); try { await setDoc(doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session'), { action: 'start', status: 'initializing', updatedAt: serverTimestamp() }, { merge: true }); } catch (e) { showToast("Erro: " + e.message, "error"); setIsBotLoading(false); } };
     const cancelBotConnection = async () => { await setDoc(doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session'), { status: 'disconnected', action: 'idle', qrCode: null }, { merge: true }); };
     const disconnectBot = async () => { setIsBotLoading(true); try { await setDoc(doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session'), { action: 'logout', status: 'disconnecting', qrCode: null, updatedAt: serverTimestamp() }, { merge: true }); } catch (e) { setIsBotLoading(false); } };
     const forceDisconnectBot = async () => { if(window.confirm("Resetar?")) { setIsBotLoading(true); await setDoc(doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session'), { status: 'disconnected', qrCode: null, action: 'force_logout' }); setIsBotLoading(false); } };
 
-    // Messages
     const openMessageModal = (client, type) => {
         if(botSession?.status !== 'connected') return showToast("Bot desconectado!", "error");
-        const rawText = generateWhatsAppMessage(client, user, type); // Usa função do components.js
+        const rawText = window.generateWhatsAppMessage(client, user, type); // Usa função global
         setMessagePreview({
             isOpen: true, text: rawText, recipient: client.name,
             onSend: async (finalText) => {
@@ -290,10 +267,9 @@ const FireTVManager = () => {
         });
     };
 
-    // Export/Import
     const handleExport = () => {
         const header = ["Nome", "WhatsApp", "Vencimento", "Valor", "Usuario", "Observacao", "Status"];
-        const rows = clients.map(c => [ c.name, c.whatsapp, c.dueDate, c.value, c.username, c.observation, getClientStatus(c.dueDate).status ]);
+        const rows = clients.map(c => [ c.name, c.whatsapp, c.dueDate, c.value, c.username, c.observation, window.getClientStatus(c.dueDate).status ]);
         const csvContent = "data:text/csv;charset=utf-8," + [header, ...rows].map(e => e.join(";")).join("\n");
         const link = document.createElement("a"); link.setAttribute("href", encodeURI(csvContent)); link.setAttribute("download", `clientes_${new Date().toISOString().slice(0,10)}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link);
     };
@@ -301,7 +277,6 @@ const FireTVManager = () => {
         const batch = writeBatch(db); data.forEach(c => batch.set(doc(getClientsCollection()), { ...c, createdBy: user.email, createdAt: new Date().toISOString() })); await batch.commit(); showToast(`${data.length} importados!`, "success"); setIsImportModalOpen(false);
     };
 
-    // CRUD
     const handleSaveItem = async (e) => {
         e.preventDefault(); setIsProcessing(true);
         try {
@@ -374,31 +349,30 @@ const FireTVManager = () => {
     const handleSaveMessageConfig = async (e) => { e.preventDefault(); setIsProcessing(true); try { const u = { ...user, companyName: msgCompany, messageTemplates: msgTemplates }; if(userApiKey) localStorage.setItem('firetv_ai_key', userApiKey); await updateDoc(doc(getUsersCollection(), user.id), { companyName: msgCompany, messageTemplates: msgTemplates }); setUser(u); localStorage.setItem('firetv_user_session', JSON.stringify(u)); showToast("Salvo!"); } catch(e){ showToast(e.message); } finally { setIsProcessing(false); } };
     const handleAiAction = async (t) => { setAiLoading(true); const txt = await callGemini(t==='support'?`Ajude cliente IPTV: ${aiInput}`:t==='marketing'?`Crie texto venda IPTV evento ${aiEvent}`:`Analise: ${clients.length} clientes. Dê dicas.`, userApiKey); setAiResponse(txt); setAiLoading(false); };
 
-    // --- RENDERIZADORES AUXILIARES ---
-    const filteredClients = useMemo(() => clients.filter(c => (c.name?.toLowerCase().includes(searchTerm.toLowerCase()) || c.whatsapp?.includes(searchTerm)) && (filterStatus==='all' ? true : filterStatus==='active' ? ['active','today','expiring'].includes(getClientStatus(c.dueDate).status) : getClientStatus(c.dueDate).status === 'expired')).sort((a,b)=>new Date(a.dueDate||'2099-01-01')-new Date(b.dueDate||'2099-01-01')), [clients, searchTerm, filterStatus]);
+    const filteredClients = useMemo(() => clients.filter(c => (c.name?.toLowerCase().includes(searchTerm.toLowerCase()) || c.whatsapp?.includes(searchTerm)) && (filterStatus==='all' ? true : filterStatus==='active' ? ['active','today','expiring'].includes(window.getClientStatus(c.dueDate).status) : window.getClientStatus(c.dueDate).status === 'expired')).sort((a,b)=>new Date(a.dueDate||'2099-01-01')-new Date(b.dueDate||'2099-01-01')), [clients, searchTerm, filterStatus]);
     const filteredTeam = useMemo(() => team.filter(t => (t.name?.toLowerCase().includes(searchTeamTerm.toLowerCase()) || t.email?.includes(searchTeamTerm)) && (user?.role==='ceo' ? t.role===teamFilter : true)), [team, searchTeamTerm, teamFilter, user]);
     const filteredTransactions = useMemo(() => transactions.filter(t => { const d = new Date(t.date); return d.getMonth()===financeMonth && d.getFullYear()===financeYear; }), [transactions, financeMonth, financeYear]);
     const monthlyRevenue = useMemo(() => filteredTransactions.reduce((acc, c) => acc + (parseFloat(c.value)||0), 0), [filteredTransactions]);
-    const stats = useMemo(() => ({ active: clients.filter(c => ['active','today','expiring'].includes(getClientStatus(c.dueDate).status)).length, expired: clients.filter(c => getClientStatus(c.dueDate).status==='expired').length, total: clients.length, today: clients.filter(c => getClientStatus(c.dueDate).status === 'today').length }), [clients]);
-    const financialStats = useMemo(() => ({ activeRevenue: clients.filter(c => ['active','today','expiring'].includes(getClientStatus(c.dueDate).status)).reduce((a,c)=>a+(parseFloat(c.value)||0),0), lostRevenue: clients.filter(c => getClientStatus(c.dueDate).status==='expired').reduce((a,c)=>a+(parseFloat(c.value)||0),0) }), [clients]);
+    const stats = useMemo(() => ({ active: clients.filter(c => ['active','today','expiring'].includes(window.getClientStatus(c.dueDate).status)).length, expired: clients.filter(c => window.getClientStatus(c.dueDate).status==='expired').length, total: clients.length, today: clients.filter(c => window.getClientStatus(c.dueDate).status === 'today').length }), [clients]);
+    const financialStats = useMemo(() => ({ activeRevenue: clients.filter(c => ['active','today','expiring'].includes(window.getClientStatus(c.dueDate).status)).reduce((a,c)=>a+(parseFloat(c.value)||0),0), lostRevenue: clients.filter(c => window.getClientStatus(c.dueDate).status==='expired').reduce((a,c)=>a+(parseFloat(c.value)||0),0) }), [clients]);
     
     const canAdd = activeTab === 'clients' || (activeTab === 'team' && (user?.role === 'ceo' || user?.role === 'master'));
-    const myDaysLeft = getDaysLeft(user?.panelExpiration);
-    const isExpired = isPanelExpired(user?.panelExpiration) && user?.role !== 'ceo';
+    const myDaysLeft = window.getDaysLeft(user?.panelExpiration);
+    const isExpired = window.isPanelExpired(user?.panelExpiration) && user?.role !== 'ceo';
 
-    if (initializing) return <div className="h-screen bg-slate-950 flex items-center justify-center text-orange-500"><LoadingSpinner size={40}/></div>;
+    if (initializing) return <div className="h-screen bg-slate-950 flex items-center justify-center text-orange-500"><window.LoadingSpinner size={40}/></div>;
     if (isExpired && user) return <div className="h-screen bg-slate-950 flex items-center justify-center p-4 text-center"><div className="bg-slate-900 p-8 rounded-2xl border border-red-500/50"><h2 className="text-3xl font-bold text-white mb-2">BLOQUEADO</h2><button onClick={handleLogout} className="bg-slate-800 text-white p-3 rounded">Sair</button></div></div>;
-    if (view === 'landing') return <Landing setAuthType={setAuthType} setShowAuthModal={setShowAuthModal} />;
+    if (view === 'landing') return <window.Landing setAuthType={setAuthType} setShowAuthModal={setShowAuthModal} />;
 
     return (
         <div className="flex h-screen bg-slate-950 overflow-hidden">
-            <ToastNotification notification={notification} onClose={()=>setNotification({...notification, show: false})} />
-            <ConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={()=>setConfirmDialog({...confirmDialog, isOpen:false})} isLoading={isProcessing}/>
-            <ImportExportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onImport={handleImport} onExport={handleExport} isLoading={isProcessing} clients={clients} />
-            <CelebrationModal isOpen={!!celebrationData} onClose={()=>setCelebrationData(null)} data={celebrationData || {}} />
-            <MessagePreviewModal isOpen={messagePreview.isOpen} text={messagePreview.text} recipient={messagePreview.recipient} onClose={()=>setMessagePreview({...messagePreview, isOpen:false})} onSend={messagePreview.onSend} isLoading={isProcessing} />
+            <window.ToastNotification notification={notification} onClose={()=>setNotification({...notification, show: false})} />
+            <window.ConfirmDialog isOpen={confirmDialog.isOpen} title={confirmDialog.title} message={confirmDialog.message} onConfirm={confirmDialog.onConfirm} onCancel={()=>setConfirmDialog({...confirmDialog, isOpen:false})} isLoading={isProcessing}/>
+            <window.ImportExportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onImport={handleImport} onExport={handleExport} isLoading={isProcessing} clients={clients} />
+            <window.CelebrationModal isOpen={!!celebrationData} onClose={()=>setCelebrationData(null)} data={celebrationData || {}} />
+            <window.MessagePreviewModal isOpen={messagePreview.isOpen} text={messagePreview.text} recipient={messagePreview.recipient} onClose={()=>setMessagePreview({...messagePreview, isOpen:false})} onSend={messagePreview.onSend} isLoading={isProcessing} />
             {showAuthModal && <AuthModal />}
-            {showRegistrationSuccess && <RegistrationSuccessModal onClose={()=>setShowRegistrationSuccess(false)} />}
+            {showRegistrationSuccess && <window.RegistrationSuccessModal onClose={()=>setShowRegistrationSuccess(false)} />}
 
             {/* SIDEBAR PC */}
             <aside className="w-64 bg-slate-900 border-r border-slate-800 hidden md:flex flex-col z-20">
@@ -412,7 +386,7 @@ const FireTVManager = () => {
                          <button key={item.id} onClick={()=>{setActiveTab(item.id); if(item.id==='settings') setSettingsView('menu');}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeTab===item.id?'bg-slate-800 text-white shadow-inner':'text-slate-400 hover:bg-slate-800/50 hover:text-white'}`}><item.i size={18} className={item.c||""}/> {item.l}</button>
                      ))}
                  </nav>
-                 <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-3 mb-4 px-2 bg-slate-800/50 p-2 rounded-lg"><div className="w-9 h-9 rounded-lg bg-slate-700 flex items-center justify-center font-bold text-sm">{user.name?.charAt(0).toUpperCase()}</div><div className="flex-1 min-w-0 overflow-hidden"><p className="text-sm font-bold truncate">{user.name}</p><RoleBadge role={user.role} /></div></div><button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-red-400 hover:bg-red-500/10 p-2.5 rounded-lg text-sm font-bold transition-colors"><LogOut size={16} /> Sair</button></div>
+                 <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-3 mb-4 px-2 bg-slate-800/50 p-2 rounded-lg"><div className="w-9 h-9 rounded-lg bg-slate-700 flex items-center justify-center font-bold text-sm">{user.name?.charAt(0).toUpperCase()}</div><div className="flex-1 min-w-0 overflow-hidden"><p className="text-sm font-bold truncate">{user.name}</p><window.RoleBadge role={user.role} /></div></div><button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-red-400 hover:bg-red-500/10 p-2.5 rounded-lg text-sm font-bold transition-colors"><LogOut size={16} /> Sair</button></div>
             </aside>
 
             {/* MOBILE HEADER */}
@@ -421,27 +395,15 @@ const FireTVManager = () => {
             {/* MAIN CONTENT AREA */}
             <main className="flex-1 overflow-y-auto bg-slate-950 relative pt-20 pb-24 md:pt-0 md:pb-0">
                 <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-full">
-                    {/* Aqui entra todo o conteúdo do painel (Dashboard, Clientes, etc) */}
-                    {/* Para economizar espaço, a lógica de renderização dos componentes internos (Tabelas, Cards) 
-                        é idêntica à versão anterior, apenas inserida dentro do return deste componente React. 
-                        A estrutura de tabs (activeTab === 'dashboard') permanece a mesma. 
-                    */}
-                    
-                    {/* ... CONTEÚDO DAS TABS (Dashboard, Clientes, Equipe, etc) ... */}
-                    {/* MANTENHA AQUI O MESMO JSX DE TABELAS E GRIDS DO CÓDIGO ORIGINAL */}
-                    {/* Se precisar do JSX completo das tabelas novamente, me avise, mas ele é igual ao anterior */}
-                    
-                    {/* Exemplo Simplificado do Dashboard para teste */}
                     {activeTab === 'dashboard' && (
                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-in">
-                            <StatCard title="Clientes" value={clients.length} icon={<UserPlus size={24} />} color="blue" />
-                            <StatCard title="Vencidos" value={stats.expired} icon={<AlertTriangle size={24} />} color="red" />
-                            <StatCard title="Hoje" value={stats.today} icon={<Calendar size={24} />} color="orange" />
-                            <StatCard title="Receita" value={formatCurrency(financialStats.activeRevenue)} icon={<TrendingUp size={24} />} color="green" />
+                            <window.StatCard title="Clientes" value={clients.length} icon={<UserPlus size={24} />} color="blue" />
+                            <window.StatCard title="Vencidos" value={stats.expired} icon={<AlertTriangle size={24} />} color="red" />
+                            <window.StatCard title="Hoje" value={stats.today} icon={<Calendar size={24} />} color="orange" />
+                            <window.StatCard title="Receita" value={window.formatCurrency(financialStats.activeRevenue)} icon={<TrendingUp size={24} />} color="green" />
                          </div>
                     )}
                     
-                    {/* Renderização de Clients Tab */}
                     {activeTab === 'clients' && (
                         <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col h-[calc(100vh-200px)] shadow-xl animate-fade-in">
                             <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row gap-4 bg-slate-900 z-10">
@@ -457,10 +419,10 @@ const FireTVManager = () => {
                                         {filteredClients.map(c => (
                                             <tr key={c.id} className="hover:bg-slate-800/30 transition-colors">
                                                 <td className="px-6 py-4 text-white font-bold">{c.name}</td>
-                                                <td className="px-6 py-4">{formatDate(c.dueDate)}</td>
+                                                <td className="px-6 py-4">{window.formatDate(c.dueDate)}</td>
                                                 <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                                    <ActionButton onClick={()=>openMessageModal(c)} color="purple" icon={Send} />
-                                                    <ActionButton onClick={()=>handleRenew(c, 'client')} color="blue" icon={Settings} />
+                                                    <window.ActionButton onClick={()=>openMessageModal(c)} color="purple" icon={Send} />
+                                                    <window.ActionButton onClick={()=>handleRenew(c, 'client')} color="blue" icon={Settings} />
                                                 </td>
                                             </tr>
                                         ))}
@@ -470,11 +432,9 @@ const FireTVManager = () => {
                         </div>
                     )}
 
-                     {/* ... Resto das Tabs (Financeiro, IA, Settings) seguem a mesma lógica ... */}
-                     
+                    {/* Adicione as outras Tabs aqui se necessário, usando window.Componente */}
                 </div>
 
-                {/* MOBILE NAV */}
                 <div className="md:hidden fixed bottom-0 w-full bg-slate-900 border-t border-slate-800 flex justify-around items-center z-40 pb-safe shadow-[0_-5px_20px_rgba(0,0,0,0.5)]">
                      {[{id:'dashboard',l:'Início',i:LayoutDashboard},{id:'clients',l:'Clientes',i:UserPlus},{id:'finance',l:'Finanças',i:Wallet,c:'text-green-400'},{id:'ai',l:'IA',i:Sparkles,c:'text-purple-400'},{id:'settings',l:'Config',i:Settings}].map(btn => (
                          <button key={btn.id} onClick={() => {setActiveTab(btn.id);}} className={`flex flex-col items-center justify-center w-full py-3 transition-colors ${activeTab === btn.id ? (btn.c || 'text-orange-500') : 'text-slate-500'}`}><btn.i size={22} /><span className="text-[10px] font-bold mt-1">{btn.l}</span></button>
