@@ -203,6 +203,8 @@
             }
         };
 
+        // --- GERADOR DE MENSAGENS (TEXTO LIMPO) ---
+        // Alterado para retornar texto NÃO codificado por padrão, para evitar problemas com emojis e % no Bot
         const generateWhatsAppMessage = (client, userSettings, specificType = null) => {
             if (!client) return "";
             const { status, days } = getClientStatus(client.dueDate);
@@ -224,20 +226,16 @@
                 team_renewal: `🚀 *PAINEL RENOVADO!*\n\nFala parceiro(a) *{nome}*!\nSeu painel de revenda foi renovado com sucesso.\n\nNova validade: *{vencimento}*.\n\nVamos pra cima!`
             };
             
-            // Se foi passado um tipo específico (ex: 'renewal'), usa ele. Se não, usa o status atual.
-            // Para equipe, usamos prefixo 'team_'
             let typeKey = specificType || status;
-            
             let template = templates[typeKey] || defaults[typeKey] || defaults.active;
             
-            const message = template
+            // Retorna TEXTO LIMPO (Sem encoding) para visualização correta e envio via Bot
+            return template
                 .replace(/{nome}/g, client.name || '')
                 .replace(/{vencimento}/g, formatDate(client.dueDate || client.panelExpiration))
                 .replace(/{dias}/g, Math.abs(days))
                 .replace(/{empresa}/g, company)
                 .replace(/{valor}/g, value);
-                
-            return message; // Retorna texto puro para edição
         };
 
         const callGemini = async (prompt, userKey) => {
@@ -441,8 +439,11 @@
         );
 
         // --- COMPONENTE DE IMPORTAÇÃO ---
+        // BLINDAGEM DE DATA: Aceita "25/12/2025", "25/12/2025 14:30", "2025-12-25" e números do Excel
         const parseFlexibleDate = (dateStr) => {
             if (!dateStr) return '';
+            
+            // Se for número do Excel (ex: 45290)
             if (!isNaN(dateStr) && !isNaN(parseFloat(dateStr))) {
                 const serial = parseFloat(dateStr);
                 if (serial > 30000) {
@@ -452,17 +453,27 @@
                     return date_info.toISOString().split('T')[0];
                 }
             }
-            const cleanStr = String(dateStr).trim();
+            
+            // Remove espaços extras e pega só a primeira parte se tiver espaço (ignora hora)
+            // Ex: "25/12/2025 14:30:00" vira "25/12/2025"
+            const cleanStr = String(dateStr).trim().split(' ')[0];
             const parts = cleanStr.split(/[\/\-\.]/);
             
+            // Tenta identificar dia, mês, ano
             if (parts.length === 3) {
                 let day, month, year;
+                // Formato YYYY-MM-DD
                 if (parts[0].length === 4) { year = parts[0]; month = parts[1]; day = parts[2]; } 
-                else if (parts[2].length === 4) { year = parts[2]; day = parts[0]; month = parts[1]; }
+                // Formato DD/MM/YYYY
+                else if (parts[2].length === 4) { year = parts[2]; month = parts[1]; day = parts[0]; }
+                
                 if (day && month && year) return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
             }
-            const d = new Date(dateStr);
+            
+            // Fallback para o construtor de data padrão
+            const d = new Date(cleanStr);
             if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+            
             return ''; 
         };
 
@@ -521,7 +532,7 @@
                     const name = row[mapping.name] || 'Sem Nome';
                     let whatsapp = (row[mapping.whatsapp] || '').replace(/\D/g, '');
                     
-                    // Usa a nova função blindada
+                    // Usa a nova função blindada que remove o horário
                     let dueDate = parseFlexibleDate(row[mapping.dueDate]);
 
                     let value = (row[mapping.value] || '').replace('R$', '').replace('.', '').replace(',', '.').trim();
@@ -571,6 +582,34 @@
             );
         };
 
+        // --- COMPONENTE LANDING (TELA DE LOGIN) ---
+        const Landing = ({ setAuthType, setShowAuthModal }) => (
+            <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent"></div>
+                <nav className="container mx-auto px-6 py-6 flex justify-between items-center z-10">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-gradient-to-br from-orange-500 to-red-600 p-2 rounded-xl shadow-lg shadow-orange-500/20"><Users size={24} /></div>
+                        <span className="text-2xl font-black tracking-tighter">FIRE <span className="text-orange-500">GESTOR</span></span>
+                    </div>
+                    <button onClick={()=>{setAuthType('login'); setShowAuthModal(true)}} className="px-5 py-2 rounded-lg border border-slate-700 bg-slate-900/50 backdrop-blur text-slate-300 hover:text-white hover:border-orange-500 transition-all font-bold text-sm">Entrar</button>
+                </nav>
+                <div className="flex-1 container mx-auto px-4 flex flex-col items-center justify-center text-center z-10 pb-20">
+                    <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold text-xs uppercase tracking-wider animate-pulse-slow">
+                        <Zap size={14} className="fill-orange-500" /> Sistema Automático v2.0
+                    </div>
+                    <h1 className="text-5xl md:text-7xl font-black leading-tight mb-6 tracking-tight max-w-4xl">
+                        Gerencie seus <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-600">CLIENTES IPTV</span> Profissional
+                    </h1>
+                    <p className="text-slate-400 text-lg md:text-xl mb-10 max-w-2xl mx-auto leading-relaxed">
+                        Painel completo para gestão de clientes, renovações automáticas, envio de comprovantes via WhatsApp e controle financeiro.
+                    </p>
+                    <button onClick={()=>{setAuthType('register'); setShowAuthModal(true)}} className="px-8 py-4 bg-gradient-to-r from-orange-500 to-red-600 rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-xl shadow-orange-500/20 flex items-center gap-2 justify-center group">
+                        Teste Grátis 7 Dias <ChevronRight className="group-hover:translate-x-1 transition-transform"/>
+                    </button>
+                </div>
+            </div>
+        );
+
         // --- COMPONENTE PRINCIPAL ---
 
         const FireTVManager = () => {
@@ -600,7 +639,7 @@
             const [financeYear, setFinanceYear] = useState(new Date().getFullYear());
             const [isImportModalOpen, setIsImportModalOpen] = useState(false);
             const [settingsView, setSettingsView] = useState('menu'); 
-            const [messageTab, setMessageTab] = useState('client'); // 'client' or 'team'
+            const [messageTab, setMessageTab] = useState('client'); 
             const [aiView, setAiView] = useState('menu');
             const [aiInput, setAiInput] = useState('');
             const [aiResponse, setAiResponse] = useState('');
@@ -615,15 +654,14 @@
             const [botSession, setBotSession] = useState(null); 
             const [isBotLoading, setIsBotLoading] = useState(false);
             
-            // Novos Estados
             const [selectedClientIds, setSelectedClientIds] = useState([]);
             const [celebrationData, setCelebrationData] = useState(null);
             const [messagePreview, setMessagePreview] = useState({ isOpen: false, text: '', recipient: '', onSend: null });
-            const [viewModeClient, setViewModeClient] = useState(false); // Para o olho do cliente/equipe
+            const [viewModeClient, setViewModeClient] = useState(false); 
 
             const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
 
-            // --- TELAS INTERNAS (DEFINIDAS AQUI PARA TER ACESSO AO STATE) ---
+            // --- TELAS INTERNAS ---
             const AuthModal = () => {
                 const [email, setEmail] = useState('');
                 const [password, setPassword] = useState('');
@@ -704,33 +742,6 @@
                 );
             };
 
-            const Landing = () => (
-                <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent"></div>
-                    <nav className="container mx-auto px-6 py-6 flex justify-between items-center z-10">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-gradient-to-br from-orange-500 to-red-600 p-2 rounded-xl shadow-lg shadow-orange-500/20"><Users size={24} /></div>
-                            <span className="text-2xl font-black tracking-tighter">FIRE <span className="text-orange-500">GESTOR</span></span>
-                        </div>
-                        <button onClick={()=>{setAuthType('login'); setShowAuthModal(true)}} className="px-5 py-2 rounded-lg border border-slate-700 bg-slate-900/50 backdrop-blur text-slate-300 hover:text-white hover:border-orange-500 transition-all font-bold text-sm">Entrar</button>
-                    </nav>
-                    <div className="flex-1 container mx-auto px-4 flex flex-col items-center justify-center text-center z-10 pb-20">
-                        <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold text-xs uppercase tracking-wider animate-pulse-slow">
-                            <Zap size={14} className="fill-orange-500" /> Sistema Automático v2.0
-                        </div>
-                        <h1 className="text-5xl md:text-7xl font-black leading-tight mb-6 tracking-tight max-w-4xl">
-                            Gerencie seus <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-600">CLIENTES IPTV</span> Profissional
-                        </h1>
-                        <p className="text-slate-400 text-lg md:text-xl mb-10 max-w-2xl mx-auto leading-relaxed">
-                            Painel completo para gestão de clientes, renovações automáticas, envio de comprovantes via WhatsApp e controle financeiro.
-                        </p>
-                        <button onClick={()=>{setAuthType('register'); setShowAuthModal(true)}} className="px-8 py-4 bg-gradient-to-r from-orange-500 to-red-600 rounded-xl font-bold text-lg hover:scale-105 transition-transform shadow-xl shadow-orange-500/20 flex items-center gap-2 justify-center group">
-                            Teste Grátis 7 Dias <ChevronRight className="group-hover:translate-x-1 transition-transform"/>
-                        </button>
-                    </div>
-                </div>
-            );
-
             // INICIALIZAÇÃO
             useEffect(() => {
                 const init = async () => {
@@ -801,20 +812,24 @@
             const openMessageModal = (client, type) => {
                 if(botSession?.status !== 'connected') return showToast("Bot desconectado!", "error");
                 
-                const rawText = generateWhatsAppMessage(client, user, type); // Pega texto puro decodificado
-                const decodedText = decodeURIComponent(rawText);
+                // GERA A MENSAGEM LIMPA (SEM ENCODING) PARA EXIBIR E EDITAR
+                const rawText = generateWhatsAppMessage(client, user, type);
                 
                 setMessagePreview({
                     isOpen: true,
-                    text: decodedText,
+                    text: rawText, // Exibe texto limpo para editar
                     recipient: client.name,
                     onSend: async (finalText) => {
                         setIsProcessing(true);
                         try {
                             const phone = "55" + (client.whatsapp || client.uid || '').replace(/\D/g, ''); // Fallback uid for users
+                            // ENVIA TEXTO LIMPO PARA O FIRESTORE (O BOT DEVE LER O CAMPO 'BODY' E FAZER O ENCODING SE NECESSÁRIO, OU ENVIAR COMO TEXTO)
+                            // NOTA: Se o seu script de bot espera texto URL-encoded, descomente o encodeURIComponent.
+                            // Mas a reclamação foi de % e caracteres estranhos, o que indica que o bot recebe texto já encodado e re-encoda ou envia literal.
+                            // Vamos enviar LIMPO.
                             await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), {
                                 to: phone,
-                                body: encodeURIComponent(finalText),
+                                body: finalText, // Envia texto limpo
                                 type: 'text',
                                 status: 'pending',
                                 createdAt: serverTimestamp(),
@@ -908,10 +923,10 @@
                             // Mensagem para Equipe
                             if (botSession?.status === 'connected') {
                                 const msgData = { ...item, panelExpiration: newDateIso }; // Passa a nova data
-                                const text = generateWhatsAppMessage(msgData, user, 'team_renewal');
-                                const phone = "55" + (item.whatsapp || item.uid || '').replace(/\D/g, ''); // Tenta pegar whats ou uid como fallback (ideal ter campo whatsapp no user)
-                                // Envia direto (sem modal, para ser automático conforme pedido, ou com modal se preferir)
-                                await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), { to: phone, body: encodeURIComponent(text), type: 'text', status: 'pending', createdAt: serverTimestamp(), clientName: item.name });
+                                const text = generateWhatsAppMessage(msgData, user, 'team_renewal'); // Texto limpo
+                                const phone = "55" + (item.whatsapp || item.uid || '').replace(/\D/g, ''); 
+                                // Envia LIMPO
+                                await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), { to: phone, body: text, type: 'text', status: 'pending', createdAt: serverTimestamp(), clientName: item.name });
                             }
                         } else { // Cliente
                             let b = new Date(item.dueDate);
@@ -925,9 +940,10 @@
                             // Mensagem para Cliente
                             if (botSession?.status === 'connected') {
                                 const msgData = { ...item, dueDate: n };
-                                const text = generateWhatsAppMessage(msgData, user, 'renewal');
+                                const text = generateWhatsAppMessage(msgData, user, 'renewal'); // Texto limpo
                                 const phone = "55" + item.whatsapp.replace(/\D/g, '');
-                                await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), { to: phone, body: encodeURIComponent(text), type: 'text', status: 'pending', createdAt: serverTimestamp(), clientName: item.name });
+                                // Envia LIMPO
+                                await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), { to: phone, body: text, type: 'text', status: 'pending', createdAt: serverTimestamp(), clientName: item.name });
                             }
                         }
                         
@@ -946,7 +962,7 @@
             const filteredTeam = useMemo(() => team.filter(t => (t.name?.toLowerCase().includes(searchTeamTerm.toLowerCase()) || t.email?.includes(searchTeamTerm)) && (user.role==='ceo' ? t.role===teamFilter : true)), [team, searchTeamTerm, teamFilter, user]);
             const filteredTransactions = useMemo(() => transactions.filter(t => { const d = new Date(t.date); return d.getMonth()===financeMonth && d.getFullYear()===financeYear; }), [transactions, financeMonth, financeYear]);
             const monthlyRevenue = useMemo(() => filteredTransactions.reduce((acc, c) => acc + (parseFloat(c.value)||0), 0), [filteredTransactions]);
-            const stats = useMemo(() => ({ active: clients.filter(c => ['active','today','expiring'].includes(getClientStatus(c.dueDate).status)).length, expired: clients.filter(c => getClientStatus(c.dueDate).status==='expired').length, total: clients.length }), [clients]);
+            const stats = useMemo(() => ({ active: clients.filter(c => ['active','today','expiring'].includes(getClientStatus(c.dueDate).status)).length, expired: clients.filter(c => getClientStatus(c.dueDate).status==='expired').length, total: clients.length, today: clients.filter(c => getClientStatus(c.dueDate).status === 'today').length }), [clients]); // ADICIONADO TODAY
             const financialStats = useMemo(() => ({ activeRevenue: clients.filter(c => ['active','today','expiring'].includes(getClientStatus(c.dueDate).status)).reduce((a,c)=>a+(parseFloat(c.value)||0),0), lostRevenue: clients.filter(c => getClientStatus(c.dueDate).status==='expired').reduce((a,c)=>a+(parseFloat(c.value)||0),0) }), [clients]);
 
             const canAdd = activeTab === 'clients' || (activeTab === 'team' && (user?.role === 'ceo' || user?.role === 'master'));
@@ -955,7 +971,7 @@
 
             if (initializing) return <div className="h-screen bg-slate-950 flex items-center justify-center text-orange-500"><LoadingSpinner size={40}/></div>;
             if (isExpired && user) return <div className="h-screen bg-slate-950 flex items-center justify-center p-4 text-center"><div className="bg-slate-900 p-8 rounded-2xl border border-red-500/50"><h2 className="text-3xl font-bold text-white mb-2">BLOQUEADO</h2><button onClick={handleLogout} className="bg-slate-800 text-white p-3 rounded">Sair</button></div></div>;
-            if (view === 'landing') return <><Landing />{showAuthModal && <AuthModal />}{showRegistrationSuccess && <RegistrationSuccessModal onClose={()=>setShowRegistrationSuccess(false)} />}</>;
+            if (view === 'landing') return <Landing setAuthType={setAuthType} setShowAuthModal={setShowAuthModal} />;
 
             return (
                 <div className="flex h-screen bg-slate-950 overflow-hidden">
@@ -964,6 +980,8 @@
                     <ImportExportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} onImport={handleImport} onExport={handleExport} isLoading={isProcessing} clients={clients} />
                     <CelebrationModal isOpen={!!celebrationData} onClose={()=>setCelebrationData(null)} data={celebrationData || {}} />
                     <MessagePreviewModal isOpen={messagePreview.isOpen} text={messagePreview.text} recipient={messagePreview.recipient} onClose={()=>setMessagePreview({...messagePreview, isOpen:false})} onSend={messagePreview.onSend} isLoading={isProcessing} />
+                    {showAuthModal && <AuthModal />}
+                    {showRegistrationSuccess && <RegistrationSuccessModal onClose={()=>setShowRegistrationSuccess(false)} />}
 
                     <aside className="w-64 bg-slate-900 border-r border-slate-800 hidden md:flex flex-col z-20">
                          <div className="p-6 border-b border-slate-800 flex items-center gap-3"><div className="bg-gradient-to-br from-orange-500 to-red-600 p-1.5 rounded-lg"><Users size={20} /></div><span className="text-xl font-black tracking-tight">FIRE <span className="text-orange-500">GESTOR</span></span></div>
@@ -1006,7 +1024,7 @@
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                         <StatCard title="Total Clientes" value={clients.length} icon={<UserPlus size={24} />} color="blue" />
                                         <StatCard title="Vencidos" value={stats.expired} icon={<AlertTriangle size={24} />} color="red" />
-                                        <StatCard title="Vence Hoje" value={stats.today} icon={<Calendar size={24} />} color="orange" />
+                                        <StatCard title="Vence Hoje" value={stats.today || 0} icon={<Calendar size={24} />} color="orange" />
                                         <StatCard title="Minha Equipe" value={team.length} icon={<Shield size={24} />} color="purple" />
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1070,7 +1088,7 @@
                                             <tbody className="divide-y divide-slate-800">
                                                 {filteredClients.map(client => {
                                                     const { label, color } = getClientStatus(client.dueDate);
-                                                    const waLink = client.whatsapp ? `https://wa.me/55${client.whatsapp.replace(/\D/g,'')}?text=${generateWhatsAppMessage(client, user)}` : null;
+                                                    const waLink = client.whatsapp ? `https://wa.me/55${client.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(generateWhatsAppMessage(client, user))}` : null;
                                                     const isSelected = selectedClientIds.includes(client.id);
                                                     return (
                                                         <tr key={client.id} className={`transition-colors group ${isSelected ? 'bg-orange-500/5' : 'hover:bg-slate-800/30'}`}>
@@ -1262,6 +1280,32 @@
                                     <form onSubmit={handleUpdateProfile} className="space-y-6" autoComplete="off"><input type="text" style={{display:'none'}} /><input type="password" style={{display:'none'}} /><div><label className="block text-xs font-bold uppercase text-slate-400 mb-2">Novo E-mail</label><input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:border-indigo-500 outline-none transition-colors" placeholder={user.email}/></div><div><label className="block text-xs font-bold uppercase text-slate-400 mb-2">Nova Senha</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:border-indigo-500 outline-none transition-colors" placeholder="******" minLength={6}/></div><div className="pt-4 border-t border-slate-800"><label className="block text-xs font-bold uppercase text-red-400 mb-2">Senha Atual (Obrigatório)</label><input type="password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full bg-slate-950 border border-red-900/50 rounded-xl py-3 px-4 text-white focus:border-red-500 outline-none transition-colors" placeholder="Confirme sua senha atual"/></div><button type="submit" disabled={isProcessing} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2">{isProcessing ? <LoadingSpinner /> : <Save size={18} />} Atualizar Conta</button></form>
                                 </div>
                             )}
+                            {/* AI View - restored and fixed */}
+                            {activeTab === 'ai' && (
+                                <div className="flex flex-col h-full max-w-3xl mx-auto animate-fade-in pt-8">
+                                    {aiView === 'menu' ? (
+                                        <div className="space-y-8">
+                                            <div className="text-center space-y-3"><div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl flex items-center justify-center mx-auto shadow-xl shadow-purple-900/20 mb-6"><Sparkles size={32} className="text-white" /></div><h1 className="text-3xl font-bold text-white">Fire AI</h1><p className="text-slate-400 max-w-md mx-auto">Assistente inteligente para alavancar sua operação.</p></div>
+                                            <div className="grid md:grid-cols-3 gap-4">
+                                                <button onClick={() => setAiView('support')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-purple-500 hover:bg-slate-800/50 transition-all group text-left"><div className="bg-blue-500/10 w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><MessageSquare className="text-blue-400" /></div><h3 className="font-bold text-lg text-white mb-2">Suporte Técnico</h3><p className="text-sm text-slate-400">Gere respostas rápidas.</p></button>
+                                                <button onClick={() => setAiView('marketing')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-purple-500 hover:bg-slate-800/50 transition-all group text-left"><div className="bg-orange-500/10 w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Megaphone className="text-orange-400" /></div><h3 className="font-bold text-lg text-white mb-2">Marketing</h3><p className="text-sm text-slate-400">Textos de venda.</p></button>
+                                                <button onClick={() => setAiView('consultant')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-purple-500 hover:bg-slate-800/50 transition-all group text-left"><div className="bg-green-500/10 w-12 h-12 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><BarChart3 className="text-green-400" /></div><h3 className="font-bold text-lg text-white mb-2">Consultor</h3><p className="text-sm text-slate-400">Análise de dados.</p></button>
+                                            </div>
+                                            <div className="pt-6 border-t border-slate-800 mt-8"><div className="flex items-center gap-2 mb-4"><Key size={20} className="text-purple-500" /><h3 className="text-lg font-bold text-white">Chave de API (Gemini)</h3></div><div className="flex gap-2"><input type="password" value={userApiKey} onChange={(e) => setUserApiKey(e.target.value)} className="flex-1 bg-slate-950 border border-purple-500/30 rounded-xl py-3 px-4 text-white focus:border-purple-500 outline-none transition-colors" placeholder="Cole sua chave API aqui"/><button onClick={handleSaveMessageConfig} className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl transition-all shadow-lg shadow-purple-500/20">Salvar</button></div></div>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col h-[600px] shadow-2xl relative">
+                                            <div className="flex items-center gap-4 mb-6 pb-4 border-b border-slate-800"><button onClick={() => {setAiView('menu'); setAiResponse('');}} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"><ArrowLeft size={20}/></button><h2 className="text-xl font-bold text-white">IA Assistente</h2></div>
+                                            <div className="flex-1 overflow-y-auto mb-4 space-y-4 pr-2 custom-scrollbar">{aiResponse ? (<div className="bg-slate-950 p-6 rounded-xl border border-slate-800 prose prose-invert max-w-none animate-fade-in"><div className="whitespace-pre-wrap">{aiResponse}</div><button onClick={() => {navigator.clipboard.writeText(aiResponse); showToast("Copiado!", "success")}} className="mt-6 flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-white transition-colors bg-slate-900 py-2 px-4 rounded-lg"><Copy size={14}/> Copiar Texto</button></div>) : <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-50"><BrainCircuit size={48} className="mb-4 animate-pulse"/><p>Aguardando comando...</p></div>}</div>
+                                            <div className="mt-auto pt-4 border-t border-slate-800">
+                                                {aiView === 'support' && (<div className="flex gap-2"><input type="text" value={aiInput} onChange={(e) => setAiInput(e.target.value)} placeholder="Descreva o problema..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:border-purple-500 transition-colors" onKeyDown={(e) => e.key === 'Enter' && handleAiAction('support')}/><button onClick={() => handleAiAction('support')} disabled={aiLoading} className="bg-purple-600 hover:bg-purple-500 text-white p-3 rounded-xl transition-colors disabled:opacity-50">{aiLoading ? <LoadingSpinner /> : <Send size={20}/>}</button></div>)}
+                                                {aiView === 'marketing' && (<div className="flex gap-2"><select value={aiEvent} onChange={(e) => setAiEvent(e.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:border-purple-500 transition-colors appearance-none"><option>Futebol (Brasileirão)</option><option>Futebol (Libertadores)</option><option>UFC / Luta</option><option>Filmes & Séries</option></select><button onClick={() => handleAiAction('marketing')} disabled={aiLoading} className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl font-bold transition-colors disabled:opacity-50 flex items-center gap-2">{aiLoading ? <LoadingSpinner /> : <><Sparkles size={18}/> Gerar</>}</button></div>)}
+                                                {aiView === 'consultant' && <button onClick={() => handleAiAction('consultant')} disabled={aiLoading} className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:opacity-90 text-white p-4 rounded-xl font-bold text-lg transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">{aiLoading ? <><LoadingSpinner /> Analisando...</> : <><BarChart3 size={20}/> Analisar Meu Negócio</>}</button>}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* MODAL ADD/EDIT */}
@@ -1277,7 +1321,6 @@
                                                     <div><label className="text-xs font-bold text-slate-500 ml-1">NOME</label><input required value={formData.name||''} onChange={e=>setFormData({...formData,name:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white"/></div>
                                                     <div><label className="text-xs font-bold text-slate-500 ml-1">WHATSAPP</label><input value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value.replace(/\D/g,'')})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white" placeholder="11999999999"/></div>
                                                     <div><label className="text-xs font-bold text-slate-500 ml-1">USUÁRIO (IPTV)</label><input value={formData.username||''} onChange={e=>setFormData({...formData,username:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white"/></div>
-                                                    {/* NOVO CAMPO OBSERVAÇÃO */}
                                                     <div><label className="text-xs font-bold text-slate-500 ml-1">OBSERVAÇÃO</label><textarea rows="2" value={formData.observation||''} onChange={e=>setFormData({...formData,observation:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white resize-none"/></div>
                                                     <div className="grid grid-cols-2 gap-4">
                                                         <div><label className="text-xs font-bold text-slate-500 ml-1">VENCIMENTO</label><input type="date" required value={formData.dueDate||''} onChange={e=>setFormData({...formData,dueDate:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white"/></div>
