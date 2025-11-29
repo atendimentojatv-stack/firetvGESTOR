@@ -4,8 +4,8 @@ import {
   Send, Upload, Download, FileSpreadsheet, Zap, ChevronRight, Users, Eye
 } from 'lucide-react';
 
-// --- UTILITÁRIOS ---
-export const formatDate = (val) => {
+// --- UTILITÁRIOS GLOBAIS ---
+window.formatDate = (val) => {
     try {
         if (!val) return '-';
         const date = typeof val === 'object' && val.toDate ? val.toDate() : new Date(val); 
@@ -14,14 +14,14 @@ export const formatDate = (val) => {
     } catch (e) { return '-'; }
 };
 
-export const formatCurrency = (val) => {
+window.formatCurrency = (val) => {
     try {
         const num = parseFloat(val) || 0;
         return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     } catch (e) { return 'R$ 0,00'; }
 };
 
-export const getDaysLeft = (expirationDate) => {
+window.getDaysLeft = (expirationDate) => {
     try {
         if (!expirationDate) return 0;
         const end = typeof expirationDate === 'object' && expirationDate.toDate ? expirationDate.toDate() : new Date(expirationDate);
@@ -32,13 +32,13 @@ export const getDaysLeft = (expirationDate) => {
     } catch (e) { return 0; }
 };
 
-export const isPanelExpired = (expirationDate) => {
+window.isPanelExpired = (expirationDate) => {
     if (!expirationDate) return false;
     const end = typeof expirationDate === 'object' && expirationDate.toDate ? expirationDate.toDate() : new Date(expirationDate);
     return end < new Date();
 };
 
-export const getClientStatus = (dueDate) => {
+window.getClientStatus = (dueDate) => {
     try {
         if (!dueDate) return { status: 'no_date', label: 'Sem Data', color: 'slate' };
         const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -60,13 +60,43 @@ export const getClientStatus = (dueDate) => {
     }
 };
 
-// --- COMPONENTES VISUAIS ---
+window.generateWhatsAppMessage = (client, userSettings, specificType = null) => {
+    if (!client) return "";
+    const { status, days } = window.getClientStatus(client.dueDate);
+    const company = userSettings?.companyName || "Fire Gestor";
+    const templates = userSettings?.messageTemplates || {};
+    const value = window.formatCurrency(client.value || 0);
+    
+    const defaultGreeting = `Olá *{nome}*, tudo bem? Aqui é do *{empresa}*.\n\n`;
+    
+    const defaults = {
+        expired: defaultGreeting + `⚠️ *SEU PLANO DE {valor} ESTÁ VENCIDO* há {dias} dias.\nEvite o corte do sinal, renove agora mesmo!`,
+        today: defaultGreeting + `⚠️ *ATENÇÃO:* Seu plano de {valor} vence *HOJE*.\nGaranta a renovação para não perder a programação.`,
+        expiring: defaultGreeting + `⏳ Seu plano ({valor}) vence em apenas *{dias} dias* ({vencimento}).\nQue tal já deixar renovado?`,
+        active: defaultGreeting + `✅ Seu plano de {valor} está ativo até *{vencimento}*.\nAgradecemos a preferência!`,
+        renewal: defaultGreeting + `✅ *PAGAMENTO RECEBIDO!*\n\nRecebemos seu pagamento de {valor}.\nSeu plano foi renovado com sucesso e agora vence em: *{vencimento}*.\n\nMuito obrigado pela preferência!`,
+        team_active: `Olá *{nome}*! Seu painel de revenda está ativo e operando 100%. Vence em: {vencimento}. Boas vendas!`,
+        team_renewal: `🚀 *PAINEL RENOVADO!*\n\nFala parceiro(a) *{nome}*!\nSeu painel de revenda foi renovado com sucesso.\n\nNova validade: *{vencimento}*.\n\nVamos pra cima!`
+    };
+    
+    let typeKey = specificType || status;
+    let template = templates[typeKey] || defaults[typeKey] || defaults.active;
+    
+    return template
+        .replace(/{nome}/g, client.name || '')
+        .replace(/{vencimento}/g, window.formatDate(client.dueDate || client.panelExpiration))
+        .replace(/{dias}/g, Math.abs(days))
+        .replace(/{empresa}/g, company)
+        .replace(/{valor}/g, value);
+};
 
-export const LoadingSpinner = ({ size = 20, color = "text-white" }) => (
+// --- COMPONENTES VISUAIS GLOBAIS ---
+
+window.LoadingSpinner = ({ size = 20, color = "text-white" }) => (
     <RefreshCw size={size} className={`animate-spin ${color}`} />
 );
 
-export const RoleBadge = ({ role }) => { 
+window.RoleBadge = ({ role }) => { 
     const config = { 
         ceo: { label: 'CEO', style: 'border-red-500 text-red-400 bg-red-500/10' },
         master: { label: 'MASTER', style: 'border-purple-500 text-purple-400 bg-purple-500/10' },
@@ -76,7 +106,7 @@ export const RoleBadge = ({ role }) => {
     return <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${active.style}`}>{active.label}</span>; 
 };
 
-export const StatCard = ({ title, value, icon, color }) => (
+window.StatCard = ({ title, value, icon, color }) => (
     <div className={`bg-slate-900 p-6 rounded-2xl border border-slate-800 flex items-center justify-between hover:border-${color}-500/50 transition-all hover:-translate-y-1 hover:shadow-lg shadow-black/50 group`}>
         <div>
             <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2 group-hover:text-slate-300 transition-colors">{title}</p>
@@ -86,7 +116,7 @@ export const StatCard = ({ title, value, icon, color }) => (
     </div>
 );
 
-export const ToastNotification = ({ notification, onClose }) => {
+window.ToastNotification = ({ notification, onClose }) => {
     if (!notification.show) return null;
     useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, [notification, onClose]);
     return (
@@ -101,7 +131,7 @@ export const ToastNotification = ({ notification, onClose }) => {
     );
 };
 
-export const ConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, isLoading }) => {
+window.ConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, isLoading }) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-fade-in">
@@ -111,7 +141,7 @@ export const ConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, isL
                 <div className="flex gap-3 justify-end">
                     <button onClick={onCancel} disabled={isLoading} className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-800 font-medium transition-colors">Cancelar</button>
                     <button onClick={onConfirm} disabled={isLoading} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold flex items-center gap-2 transition-colors disabled:opacity-50">
-                        {isLoading ? <LoadingSpinner size={16}/> : null}
+                        {isLoading ? <window.LoadingSpinner size={16}/> : null}
                         {isLoading ? 'Processando...' : 'Confirmar'}
                     </button>
                 </div>
@@ -120,7 +150,7 @@ export const ConfirmDialog = ({ isOpen, title, message, onConfirm, onCancel, isL
     );
 };
 
-export const RegistrationSuccessModal = ({ onClose }) => (
+window.RegistrationSuccessModal = ({ onClose }) => (
     <div className="fixed inset-0 bg-black/95 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-fade-in">
         <div className="bg-slate-900 border-2 border-green-500 w-full max-w-sm md:max-w-lg rounded-3xl p-6 md:p-8 shadow-[0_0_50px_rgba(34,197,94,0.2)] relative text-center transform scale-100 transition-all">
             <button onClick={onClose} className="absolute top-4 right-4 bg-slate-800 p-2 rounded-full text-slate-400 hover:text-white transition-colors hover:bg-slate-700">
@@ -146,7 +176,7 @@ export const RegistrationSuccessModal = ({ onClose }) => (
     </div>
 );
 
-export const MessagePreviewModal = ({ isOpen, onClose, text, onSend, recipient, isLoading }) => {
+window.MessagePreviewModal = ({ isOpen, onClose, text, onSend, recipient, isLoading }) => {
     const [editedText, setEditedText] = useState(text);
     useEffect(() => { setEditedText(text); }, [text]);
     if (!isOpen) return null;
@@ -156,13 +186,13 @@ export const MessagePreviewModal = ({ isOpen, onClose, text, onSend, recipient, 
                 <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-white text-lg">Confirmar Mensagem</h3><button onClick={onClose} className="text-slate-500 hover:text-white"><X size={20}/></button></div>
                 <div className="mb-2 text-sm text-slate-400">Para: <span className="font-bold text-white">{recipient}</span></div>
                 <textarea value={editedText} onChange={(e) => setEditedText(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-sm text-white h-48 focus:border-green-500 outline-none resize-none mb-4" />
-                <button onClick={() => onSend(editedText)} disabled={isLoading} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2">{isLoading ? <LoadingSpinner size={18}/> : <Send size={18}/>} Enviar Agora</button>
+                <button onClick={() => onSend(editedText)} disabled={isLoading} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl flex justify-center items-center gap-2">{isLoading ? <window.LoadingSpinner size={18}/> : <Send size={18}/>} Enviar Agora</button>
             </div>
         </div>
     );
 };
 
-export const CelebrationModal = ({ isOpen, onClose, data }) => {
+window.CelebrationModal = ({ isOpen, onClose, data }) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-fade-in">
@@ -174,7 +204,7 @@ export const CelebrationModal = ({ isOpen, onClose, data }) => {
                     <div className="bg-black/30 rounded-xl p-4 mb-6 border border-green-500/30">
                         <p className="text-slate-400 text-sm mb-1">Cliente</p><p className="text-white font-bold text-xl mb-3">{data.name}</p>
                         <div className="h-px bg-green-500/30 w-full mb-3"></div>
-                        <p className="text-slate-400 text-sm mb-1">Novo Vencimento</p><p className="text-green-400 font-mono font-bold text-2xl">{formatDate(data.newDate)}</p>
+                        <p className="text-slate-400 text-sm mb-1">Novo Vencimento</p><p className="text-green-400 font-mono font-bold text-2xl">{window.formatDate(data.newDate)}</p>
                     </div>
                     <button onClick={onClose} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-green-600/30">Fechar</button>
                 </div>
@@ -183,7 +213,7 @@ export const CelebrationModal = ({ isOpen, onClose, data }) => {
     );
 };
 
-export const ActionButton = ({ onClick, color = "slate", icon: Icon, label, title }) => (
+window.ActionButton = ({ onClick, color = "slate", icon: Icon, label, title }) => (
     <button onClick={onClick} className={`p-2 rounded-lg transition-colors border bg-${color}-600/10 hover:bg-${color}-600 text-${color}-500 hover:text-white border-${color}-600/20 hover:border-transparent`} title={title || label}><Icon size={18} /></button>
 );
 
@@ -206,7 +236,7 @@ const parseFlexibleDate = (dateStr) => {
     return ''; 
 };
 
-export const ImportExportModal = ({ isOpen, onClose, onImport, onExport, isLoading, clients }) => {
+window.ImportExportModal = ({ isOpen, onClose, onImport, onExport, isLoading, clients }) => {
     const [step, setStep] = useState(1);
     const [csvHeaders, setCsvHeaders] = useState([]);
     const [csvData, setCsvData] = useState([]);
@@ -280,7 +310,7 @@ export const ImportExportModal = ({ isOpen, onClose, onImport, onExport, isLoadi
                                 </div>
                             </>
                         )}
-                        {step === 3 && <div className="text-center"><LoadingSpinner size={40} color="text-green-500" /><p className="text-xs text-slate-400 mt-2">{importProgress.toFixed(0)}%</p></div>}
+                        {step === 3 && <div className="text-center"><window.LoadingSpinner size={40} color="text-green-500" /><p className="text-xs text-slate-400 mt-2">{importProgress.toFixed(0)}%</p></div>}
                     </div>
                 </div>
             </div>
@@ -288,7 +318,7 @@ export const ImportExportModal = ({ isOpen, onClose, onImport, onExport, isLoadi
     );
 };
 
-export const Landing = ({ setAuthType, setShowAuthModal }) => (
+window.Landing = ({ setAuthType, setShowAuthModal }) => (
     <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent"></div>
         <nav className="container mx-auto px-6 py-6 flex justify-between items-center z-10">
