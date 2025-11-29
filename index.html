@@ -119,7 +119,7 @@
           Save, Copy, Share2, FileText, Info, Pencil, Sparkles, Megaphone,
           BarChart3, ArrowLeft, Send, BrainCircuit, MessageSquare, Infinity as InfinityIcon, Mail, Key, UserCog,
           ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff, Menu, Power, X, FileCode, Crown,
-          Download, Upload, FileSpreadsheet, Check
+          Download, Upload, FileSpreadsheet, Check, Receipt
         } from 'lucide-react';
 
         // --- CONFIGURAÇÕES ---
@@ -144,6 +144,8 @@
         
         const getUsersCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'users');
         const getClientsCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'clients');
+        // NOVA COLEÇÃO PARA TRANSAÇÕES
+        const getTransactionsCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
 
         // --- UTILITÁRIOS ---
         const formatDate = (val) => {
@@ -201,7 +203,7 @@
             }
         };
 
-        const generateWhatsAppMessage = (client, userSettings) => {
+        const generateWhatsAppMessage = (client, userSettings, specificType = null) => {
             if (!client) return "";
             const { status, days } = getClientStatus(client.dueDate);
             const company = userSettings?.companyName || "Fire Gestor";
@@ -214,10 +216,12 @@
                 expired: defaultGreeting + `⚠️ *SEU PLANO DE {valor} ESTÁ VENCIDO* há {dias} dias.\nEvite o corte do sinal, renove agora mesmo!`,
                 today: defaultGreeting + `⚠️ *ATENÇÃO:* Seu plano de {valor} vence *HOJE*.\nGaranta a renovação para não perder a programação.`,
                 expiring: defaultGreeting + `⏳ Seu plano ({valor}) vence em apenas *{dias} dias* ({vencimento}).\nQue tal já deixar renovado?`,
-                active: defaultGreeting + `✅ Seu plano de {valor} está ativo até *{vencimento}*.\nAgradecemos a preferência!`
+                active: defaultGreeting + `✅ Seu plano de {valor} está ativo até *{vencimento}*.\nAgradecemos a preferência!`,
+                renewal: defaultGreeting + `✅ *PAGAMENTO RECEBIDO!*\n\nRecebemos seu pagamento de {valor}.\nSeu plano foi renovado com sucesso e agora vence em: *{vencimento}*.\n\nMuito obrigado pela preferência!`
             };
             
-            let template = templates[status] || defaults[status] || defaults.active;
+            const typeKey = specificType || status;
+            let template = templates[typeKey] || defaults[typeKey] || defaults.active;
             
             const message = template
                 .replace(/{nome}/g, client.name || '')
@@ -411,7 +415,6 @@
                     setCsvHeaders(headers);
                     setCsvData(data);
                     
-                    // Auto-mapping (Inteligência)
                     const newMap = { ...mapping };
                     headers.forEach(h => {
                         const lower = h.toLowerCase();
@@ -424,7 +427,7 @@
                     setMapping(newMap);
                     setStep(2);
                 };
-                reader.readAsText(file, 'ISO-8859-1'); // Tenta ler como padrão Excel BR
+                reader.readAsText(file, 'ISO-8859-1');
             };
 
             const processImport = async () => {
@@ -434,13 +437,11 @@
                 const processedClients = [];
 
                 for (const row of csvData) {
-                    // Tratamento de Dados
                     const name = row[mapping.name] || 'Sem Nome';
                     let whatsapp = row[mapping.whatsapp] || '';
-                    whatsapp = whatsapp.replace(/\D/g, ''); // Limpa tudo que não é número
+                    whatsapp = whatsapp.replace(/\D/g, '');
 
                     let dueDate = row[mapping.dueDate];
-                    // Tenta converter datas DD/MM/AAAA ou DD-MM-AAAA para YYYY-MM-DD
                     if (dueDate) {
                         if (dueDate.includes('/')) {
                             const parts = dueDate.split('/');
@@ -450,7 +451,7 @@
 
                     let value = row[mapping.value];
                     if (value) {
-                        value = value.replace('R$', '').replace('.', '').replace(',', '.').trim(); // Converte R$ 1.000,00 para 1000.00
+                        value = value.replace('R$', '').replace('.', '').replace(',', '.').trim(); 
                     }
 
                     processedClients.push({
@@ -464,7 +465,7 @@
                 }
                 
                 await onImport(processedClients, (prog) => setImportProgress(prog));
-                setStep(1); // Reset para próxima
+                setStep(1); 
             };
 
             return (
@@ -478,7 +479,6 @@
                         <p className="text-slate-400 text-sm mb-6">Gerencie seus dados em massa.</p>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            {/* Lado Esquerdo: Exportar */}
                             <div className="bg-slate-950 p-6 rounded-xl border border-slate-800 flex flex-col items-center justify-center text-center">
                                 <div className="bg-blue-500/10 p-4 rounded-full mb-4">
                                     <Download size={32} className="text-blue-500"/>
@@ -490,7 +490,6 @@
                                 </button>
                             </div>
 
-                            {/* Lado Direito: Importar */}
                             <div className="bg-slate-950 p-6 rounded-xl border border-slate-800">
                                 {step === 1 && (
                                     <div className="text-center h-full flex flex-col justify-center">
@@ -560,6 +559,7 @@
             
             const [clients, setClients] = useState([]);
             const [team, setTeam] = useState([]);
+            const [transactions, setTransactions] = useState([]); // ESTADO DE TRANSAÇÕES
             
             const [initializing, setInitializing] = useState(true);
             const [showAuthModal, setShowAuthModal] = useState(false);
@@ -577,6 +577,10 @@
             const [teamFilter, setTeamFilter] = useState('master');
             const [searchTeamTerm, setSearchTeamTerm] = useState('');
             const [newMemberRole, setNewMemberRole] = useState('reseller');
+
+            // Finance Filter States
+            const [financeMonth, setFinanceMonth] = useState(new Date().getMonth());
+            const [financeYear, setFinanceYear] = useState(new Date().getFullYear());
 
             // Import/Export States
             const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -677,6 +681,14 @@
                     setClients(s.docs.map(d => ({ id: d.id, ...d.data() })));
                 });
 
+                // NOVO: Fetch Transações
+                const qTrans = query(getTransactionsCollection(), where('createdBy', '==', user.email));
+                const unsubTrans = onSnapshot(qTrans, (s) => {
+                    const list = s.docs.map(d => ({ id: d.id, ...d.data() }))
+                        .sort((a,b) => new Date(b.date) - new Date(a.date)); // Mais recentes primeiro
+                    setTransactions(list);
+                });
+
                 let unsubTeam = () => {};
                 if (user.role === 'ceo') {
                     const qTeam = query(getUsersCollection()); 
@@ -708,7 +720,7 @@
                     }
                 });
 
-                return () => { unsubClients(); unsubTeam(); unsubBot(); };
+                return () => { unsubClients(); unsubTeam(); unsubBot(); unsubTrans(); };
             }, [user, view]);
 
             // --- BOT WHATSAPP ---
@@ -773,10 +785,10 @@
                 }
             }
 
-            const sendBotMessage = async (client) => {
+            const sendBotMessage = async (client, type = null) => {
                 if(botSession?.status !== 'connected') return showToast("Seu WhatsApp não está conectado!", "error");
                 
-                const text = decodeURIComponent(generateWhatsAppMessage(client, user));
+                const text = decodeURIComponent(generateWhatsAppMessage(client, user, type));
                 const phone = "55" + client.whatsapp.replace(/\D/g, '');
                 
                 setIsProcessing(true);
@@ -789,7 +801,10 @@
                         createdAt: serverTimestamp(),
                         clientName: client.name
                     });
-                    showToast(`Mensagem para ${client.name} enviada!`, "success");
+                    
+                    if(type === 'renewal') showToast(`Recibo de pagamento enviado para ${client.name}!`, "success");
+                    else showToast(`Mensagem para ${client.name} enviada!`, "success");
+                    
                 } catch(e) {
                     showToast("Erro ao enviar mensagem.", "error");
                 } finally {
@@ -862,7 +877,20 @@
                             await updateDoc(doc(getClientsCollection(), editingItem.id), payload);
                             showToast('Cliente atualizado!');
                         } else {
-                            await addDoc(getClientsCollection(), { ...payload, createdBy: user.email, createdAt: new Date().toISOString(), status: 'active' });
+                            const newRef = await addDoc(getClientsCollection(), { ...payload, createdBy: user.email, createdAt: new Date().toISOString(), status: 'active' });
+                            
+                            // NOVO: Grava transação de adesão se tiver valor
+                            if (parseFloat(payload.value) > 0) {
+                                await addDoc(getTransactionsCollection(), {
+                                    clientId: newRef.id,
+                                    clientName: payload.name,
+                                    value: payload.value,
+                                    date: new Date().toISOString(),
+                                    type: 'adesao',
+                                    createdBy: user.email
+                                });
+                            }
+                            
                             showToast('Cliente criado!');
                         }
                     } else {
@@ -933,7 +961,7 @@
                 setConfirmDialog({
                     isOpen: true,
                     title: 'Renovar Assinatura',
-                    message: 'Adicionar 30 dias ao vencimento?',
+                    message: 'Adicionar 30 dias ao vencimento e registrar pagamento?',
                     onConfirm: async () => {
                         setIsProcessing(true);
                         try {
@@ -946,9 +974,29 @@
                                 if (!isNaN(currentDue.getTime()) && currentDue > b) b = currentDue;
                                 b.setDate(b.getDate() + 30);
                                 const n = b.toISOString().split('T')[0];
+                                
+                                // Atualiza o cliente no banco
                                 await updateDoc(doc(getClientsCollection(), item.id), { dueDate: n, status: 'active' });
+                                
+                                // NOVO: Grava transação de renovação
+                                if (parseFloat(item.value) > 0) {
+                                    await addDoc(getTransactionsCollection(), {
+                                        clientId: item.id,
+                                        clientName: item.name,
+                                        value: item.value,
+                                        date: new Date().toISOString(),
+                                        type: 'renovacao',
+                                        createdBy: user.email
+                                    });
+                                }
+                                
+                                // Lógica nova: Envia Mensagem de Renovação Automaticamente
+                                if (botSession?.status === 'connected') {
+                                    const updatedClientForMsg = { ...item, dueDate: n };
+                                    await sendBotMessage(updatedClientForMsg, 'renewal');
+                                }
                             }
-                            showToast('Renovado com sucesso!');
+                            showToast('Renovado e Registrado no Financeiro!');
                             setConfirmDialog({ isOpen: false });
                         } catch(e) { showToast(e.message, 'error'); } 
                         finally { setIsProcessing(false); }
@@ -1041,6 +1089,18 @@
                     return matchSearch && matchRole;
                 });
             }, [team, searchTeamTerm, teamFilter, user]);
+
+            // --- FILTRO FINANCEIRO ---
+            const filteredTransactions = useMemo(() => {
+                return transactions.filter(t => {
+                    const d = new Date(t.date);
+                    return d.getMonth() === financeMonth && d.getFullYear() === financeYear;
+                });
+            }, [transactions, financeMonth, financeYear]);
+
+            const monthlyRevenue = useMemo(() => {
+                return filteredTransactions.reduce((acc, curr) => acc + (parseFloat(curr.value) || 0), 0);
+            }, [filteredTransactions]);
 
             const stats = useMemo(() => ({
                 active: clients.filter(c => ['active', 'today', 'expiring'].includes(getClientStatus(c.dueDate).status)).length,
@@ -1210,6 +1270,7 @@
                                  { id: 'dashboard', label: 'Início', icon: LayoutDashboard },
                                  { id: 'clients', label: 'Meus Clientes', icon: UserPlus },
                                  { id: 'team', label: 'Equipe', icon: Shield },
+                                 { id: 'finance', label: 'Financeiro', icon: Receipt, color: 'text-green-400' }, // NOVO ITEM
                                  { id: 'ai', label: 'Inteligência', icon: Sparkles, color: 'text-purple-400' },
                                  { id: 'settings', label: 'Configurações', icon: Settings },
                              ].map(item => (
@@ -1248,7 +1309,7 @@
                                     {!(activeTab === 'team' && user.role === 'reseller') && (
                                         <div>
                                             <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
-                                                {activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'clients' ? 'Meus Clientes' : activeTab === 'team' ? 'Gestão de Equipe' : 'Configurações'}
+                                                {activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'clients' ? 'Meus Clientes' : activeTab === 'team' ? 'Gestão de Equipe' : activeTab === 'finance' ? 'Financeiro' : 'Configurações'}
                                             </h1>
                                             <p className="text-slate-400 text-sm mt-1">{user.role === 'ceo' ? 'Painel Administrativo' : 'Gestão da Revenda'}</p>
                                         </div>
@@ -1261,7 +1322,7 @@
                                             </button>
                                         )}
                                         {/* BOTÃO NOVO CADASTRO */}
-                                        {canAdd && (
+                                        {canAdd && activeTab !== 'finance' && (
                                             <button onClick={() => { setModalType(activeTab === 'clients' ? 'client' : 'user'); setIsAddModalOpen(true); }} className="bg-orange-600 hover:bg-orange-500 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-orange-600/20 hover:scale-105 transition-all text-sm">
                                                 <Plus size={20} /> Novo
                                             </button>
@@ -1450,6 +1511,55 @@
                                 </div>
                             )}
 
+                            {/* FINANCE */}
+                            {activeTab === 'finance' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+                                        <div className="flex gap-2">
+                                            <select value={financeMonth} onChange={(e) => setFinanceMonth(parseInt(e.target.value))} className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-white outline-none focus:border-green-500">
+                                                {['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map((m, i) => <option key={i} value={i}>{m}</option>)}
+                                            </select>
+                                            <select value={financeYear} onChange={(e) => setFinanceYear(parseInt(e.target.value))} className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-white outline-none focus:border-green-500">
+                                                {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="bg-green-600/20 border border-green-500/50 px-6 py-3 rounded-xl flex items-center gap-3">
+                                            <div className="p-2 bg-green-500 rounded-lg text-white"><Receipt size={20}/></div>
+                                            <div>
+                                                <p className="text-green-400 text-xs font-bold uppercase">Entradas (Caixa)</p>
+                                                <p className="text-2xl font-black text-white">{formatCurrency(monthlyRevenue)}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+                                        <div className="p-6 border-b border-slate-800 flex items-center gap-2"><Receipt size={18} className="text-green-500"/><h3 className="font-bold">Histórico de Transações</h3></div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left text-sm text-slate-400">
+                                                <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
+                                                    <tr><th className="px-6 py-4">Data</th><th className="px-6 py-4">Cliente</th><th className="px-6 py-4">Tipo</th><th className="px-6 py-4 text-right">Valor</th></tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-800">
+                                                    {filteredTransactions.map(t => (
+                                                        <tr key={t.id} className="hover:bg-slate-800/50 transition-colors">
+                                                            <td className="px-6 py-4 font-mono">{new Date(t.date).toLocaleDateString('pt-BR')} <span className="text-slate-600 text-xs">{new Date(t.date).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}</span></td>
+                                                            <td className="px-6 py-4 font-bold text-white">{t.clientName}</td>
+                                                            <td className="px-6 py-4">
+                                                                <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${t.type === 'adesao' ? 'bg-blue-500/10 text-blue-400' : 'bg-green-500/10 text-green-400'}`}>
+                                                                    {t.type === 'adesao' ? 'Novo Cliente' : 'Renovação'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right font-mono text-green-400 font-bold">+ {formatCurrency(t.value)}</td>
+                                                        </tr>
+                                                    ))}
+                                                    {filteredTransactions.length === 0 && <tr><td colSpan="4" className="px-6 py-12 text-center text-slate-600">Nenhuma transação neste mês.</td></tr>}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* IA */}
                             {activeTab === 'ai' && (
                                 <div className="flex flex-col h-full max-w-3xl mx-auto animate-fade-in pt-8">
@@ -1615,7 +1725,8 @@
                                                 <div><label className="block text-xs font-bold uppercase text-slate-400 mb-2">Nome Empresa</label><input type="text" value={msgCompany} onChange={(e) => setMsgCompany(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:border-blue-500 outline-none transition-colors" placeholder="Ex: Top TV"/></div>
                                                 <div className="space-y-4">
                                                     <p className="text-sm font-bold text-white">Modelos de Mensagem</p>
-                                                    {[{id: 'expired', label: 'Vencido'},{id: 'today', label: 'Vence Hoje'},{id: 'expiring', label: 'Pré-Vencimento'}].map(template => (
+                                                    {/* ADICIONADO: Campo para mensagem de renovação */}
+                                                    {[{id: 'expired', label: 'Vencido'},{id: 'today', label: 'Vence Hoje'},{id: 'expiring', label: 'Pré-Vencimento'}, {id: 'renewal', label: 'Confirmação de Renovação (Recibo)'}].map(template => (
                                                         <div key={template.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800">
                                                             <label className="block text-xs font-bold text-slate-300 mb-2">{template.label}</label>
                                                             <textarea rows="2" value={msgTemplates[template.id] || ""} onChange={(e) => setMsgTemplates({...msgTemplates, [template.id]: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-blue-500 outline-none transition-colors resize-none"/>
@@ -1692,6 +1803,7 @@
                                 {id:'dashboard', icon:LayoutDashboard, l:'Início'}, 
                                 {id:'clients', icon:UserPlus, l:'Clientes'},
                                 {id:'team', icon:Shield, l:'Equipe'}, 
+                                {id:'finance', icon:Receipt, l:'Finanças', c:'text-green-400'}, // NOVO ITEM MOBILE
                                 {id:'ai', icon:Sparkles, l:'IA', c:'text-purple-500'},
                                 {id:'settings', icon:Settings, l:'Config'}
                             ].map(btn => (
