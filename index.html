@@ -44,7 +44,7 @@
         "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
         "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
         "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js",
-        "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+        "lucide-react": "https://esm.sh/lucide-react@0.460.0?deps=react@18.2.0"
       }
     }
     </script>
@@ -117,7 +117,7 @@
           Smartphone, Globe, Settings, RefreshCw, MessageCircle, Filter, 
           AlertTriangle, DollarSign, Lock, Unlock, Eye, EyeOff, Clock, Ban,
           Save, Copy, Share2, FileText, Info, Pencil, Sparkles, Megaphone,
-          BarChart3, ArrowLeft, Send, BrainCircuit, MessageSquare, Infinity, Mail, Key, UserCog,
+          BarChart3, ArrowLeft, Send, BrainCircuit, MessageSquare, Infinity as InfinityIcon, Mail, Key, UserCog,
           ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff, Menu, Power, X, FileCode, Crown,
           Download, Upload, FileSpreadsheet, Check
         } from 'lucide-react';
@@ -329,11 +329,11 @@
             <div className="fixed inset-0 bg-black/95 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-fade-in">
                 <div className="bg-slate-900 border-2 border-green-500 w-full max-w-sm md:max-w-lg rounded-3xl p-6 md:p-8 shadow-[0_0_50px_rgba(34,197,94,0.2)] relative text-center transform scale-100 transition-all">
                     <button onClick={onClose} className="absolute top-4 right-4 bg-slate-800 p-2 rounded-full text-slate-400 hover:text-white transition-colors hover:bg-slate-700">
-                        <XCircle size={20} md:size={24} />
+                        <XCircle className="w-5 h-5 md:w-6 md:h-6" />
                     </button>
                     
                     <div className="w-16 h-16 md:w-24 md:h-24 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6 animate-bounce-slow">
-                        <Mail size={32} md:size={48} className="text-green-500" />
+                        <Mail className="w-8 h-8 md:w-12 md:h-12 text-green-500" />
                     </div>
                     
                     <h2 className="text-xl md:text-3xl font-black text-white mb-3 md:mb-4 uppercase tracking-tight">
@@ -359,7 +359,7 @@
                         </div>
                         
                         <p className="text-xs md:text-sm text-slate-500 flex items-center justify-center gap-2">
-                            <Info size={14} md:size={16}/> Não esqueça de verificar a caixa de Spam/Lixo Eletrônico.
+                            <Info className="w-3.5 h-3.5 md:w-4 md:h-4"/> Não esqueça de verificar a caixa de Spam/Lixo Eletrônico.
                         </p>
                     </div>
                     
@@ -1203,7 +1203,7 @@
                          </div>
                          <div className={`mx-4 mt-6 p-4 rounded-xl border flex flex-col gap-2 ${user.plan === 'trial' ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : myDaysLeft < 5 ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>
                              <div className="flex items-center gap-2 mb-1"><Clock size={16} /><span className="text-[10px] font-bold uppercase tracking-wider">{user.plan === 'trial' ? 'Modo Teste' : 'Status Painel'}</span></div>
-                             {user.role === 'ceo' ? <div className="text-sm font-bold flex items-center gap-1 text-orange-400"><Infinity size={24}/> Ilimitado</div> : <div className="text-sm font-bold"><span className="text-xl">{myDaysLeft}</span> dias restantes</div>}
+                             {user.role === 'ceo' ? <div className="text-sm font-bold flex items-center gap-1 text-orange-400"><InfinityIcon size={24}/> Ilimitado</div> : <div className="text-sm font-bold"><span className="text-xl">{myDaysLeft}</span> dias restantes</div>}
                          </div>
                          <nav className="flex-1 p-4 space-y-1 mt-4">
                              {[
@@ -1234,7 +1234,7 @@
                     <div className="md:hidden fixed top-0 w-full bg-slate-900/95 backdrop-blur z-30 border-b border-slate-800 px-4 py-3 flex justify-between items-center shadow-lg">
                         <span className="font-black flex items-center gap-2"><Users size={20} className="text-orange-500"/> FIRE GESTOR</span>
                         <div className="flex items-center gap-3">
-                             <div className={`px-2 py-0.5 rounded text-[10px] font-bold border ${myDaysLeft < 5 ? 'border-red-500 text-red-400' : 'border-green-500 text-green-400'}`}>{user.role === 'ceo' ? <Infinity size={14}/> : myDaysLeft + 'd'}</div>
+                             <div className={`px-2 py-0.5 rounded text-[10px] font-bold border ${myDaysLeft < 5 ? 'border-red-500 text-red-400' : 'border-green-500 text-green-400'}`}>{user.role === 'ceo' ? <InfinityIcon size={14}/> : myDaysLeft + 'd'}</div>
                              <button onClick={handleLogout} className="bg-slate-800 p-2 rounded-full text-slate-400"><LogOut size={18}/></button>
                         </div>
                     </div>
