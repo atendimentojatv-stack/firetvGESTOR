@@ -441,6 +441,31 @@
         );
 
         // --- COMPONENTE DE IMPORTAÇÃO ---
+        const parseFlexibleDate = (dateStr) => {
+            if (!dateStr) return '';
+            if (!isNaN(dateStr) && !isNaN(parseFloat(dateStr))) {
+                const serial = parseFloat(dateStr);
+                if (serial > 30000) {
+                    const utc_days  = Math.floor(serial - 25569);
+                    const utc_value = utc_days * 86400;                                        
+                    const date_info = new Date(utc_value * 1000);
+                    return date_info.toISOString().split('T')[0];
+                }
+            }
+            const cleanStr = String(dateStr).trim();
+            const parts = cleanStr.split(/[\/\-\.]/);
+            
+            if (parts.length === 3) {
+                let day, month, year;
+                if (parts[0].length === 4) { year = parts[0]; month = parts[1]; day = parts[2]; } 
+                else if (parts[2].length === 4) { year = parts[2]; day = parts[0]; month = parts[1]; }
+                if (day && month && year) return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            }
+            const d = new Date(dateStr);
+            if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+            return ''; 
+        };
+
         const ImportExportModal = ({ isOpen, onClose, onImport, onExport, isLoading, clients }) => {
             const [step, setStep] = useState(1);
             const [csvHeaders, setCsvHeaders] = useState([]);
@@ -449,6 +474,14 @@
             const [importProgress, setImportProgress] = useState(0);
 
             if (!isOpen) return null;
+
+            const resetModal = () => {
+                setStep(1);
+                setCsvHeaders([]);
+                setCsvData([]);
+                setMapping({ name: '', whatsapp: '', dueDate: '', value: '', username: '', observation: '' });
+                setImportProgress(0);
+            };
 
             const handleFileRead = (e) => {
                 const file = e.target.files[0];
@@ -463,7 +496,20 @@
                         const values = line.split(/[;,]/).map(v => v.trim().replace(/"/g, ''));
                         const obj = {}; headers.forEach((h, i) => obj[h] = values[i]); return obj;
                     });
-                    setCsvHeaders(headers); setCsvData(data); setStep(2);
+                    setCsvHeaders(headers); 
+                    setCsvData(data); 
+                    
+                    const newMap = { ...mapping };
+                    headers.forEach(h => {
+                        const lower = h.toLowerCase();
+                        if (lower.includes('nome') || lower.includes('client') || lower.includes('name')) newMap.name = h;
+                        if (lower.includes('zap') || lower.includes('what') || lower.includes('cel') || lower.includes('tel') || lower.includes('fone')) newMap.whatsapp = h;
+                        if (lower.includes('venc') || lower.includes('date') || lower.includes('data') || lower.includes('expir')) newMap.dueDate = h;
+                        if (lower.includes('val') || lower.includes('pric') || lower.includes('preço')) newMap.value = h;
+                        if (lower.includes('usu') || lower.includes('user') || lower.includes('login')) newMap.username = h;
+                    });
+                    setMapping(newMap);
+                    setStep(2);
                 };
                 reader.readAsText(file, 'ISO-8859-1');
             };
@@ -474,16 +520,16 @@
                 for (const row of csvData) {
                     const name = row[mapping.name] || 'Sem Nome';
                     let whatsapp = (row[mapping.whatsapp] || '').replace(/\D/g, '');
-                    let dueDate = row[mapping.dueDate];
-                    if (dueDate && dueDate.includes('/')) {
-                        const parts = dueDate.split('/');
-                        if (parts.length === 3) dueDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-                    }
+                    
+                    // Usa a nova função blindada
+                    let dueDate = parseFlexibleDate(row[mapping.dueDate]);
+
                     let value = (row[mapping.value] || '').replace('R$', '').replace('.', '').replace(',', '.').trim();
                     processedClients.push({ name, whatsapp, dueDate: dueDate || '', value: value || '0', username: row[mapping.username] || '', observation: row[mapping.observation] || '', status: 'active' });
                 }
                 await onImport(processedClients, (prog) => setImportProgress(prog));
-                setStep(1);
+                resetModal();
+                onClose();
             };
 
             return (
@@ -497,7 +543,7 @@
                                 <h3 className="font-bold text-white mb-2">Backup de Clientes</h3>
                                 <button onClick={onExport} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg transition-colors">Baixar Planilha</button>
                             </div>
-                            <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
+                            <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 relative">
                                 {step === 1 && (
                                     <div className="text-center h-full flex flex-col justify-center">
                                         <div className="bg-green-500/10 p-4 rounded-full mb-4 mx-auto w-fit"><Upload size={32} className="text-green-500"/></div>
@@ -506,12 +552,16 @@
                                     </div>
                                 )}
                                 {step === 2 && (
-                                    <div className="space-y-2 h-64 overflow-y-auto custom-scrollbar">
-                                        {['name', 'whatsapp', 'dueDate', 'value', 'username', 'observation'].map(field => (
-                                            <div key={field} className="flex flex-col"><label className="text-[10px] font-bold uppercase text-slate-500">{field}</label><select value={mapping[field]} onChange={(e) => setMapping({...mapping, [field]: e.target.value})} className="bg-slate-950 border border-slate-700 text-white text-sm rounded-lg p-2"><option value="">-- Ignorar --</option>{csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}</select></div>
-                                        ))}
-                                        <button onClick={processImport} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg mt-2">Confirmar</button>
-                                    </div>
+                                    <>
+                                        <button onClick={resetModal} className="absolute top-2 right-2 text-red-400 hover:text-red-300 p-2" title="Cancelar arquivo"><X size={18}/></button>
+                                        <div className="space-y-2 h-64 overflow-y-auto custom-scrollbar">
+                                            <h4 className="text-sm font-bold text-white mb-2">Vincule as colunas:</h4>
+                                            {['name', 'whatsapp', 'dueDate', 'value', 'username', 'observation'].map(field => (
+                                                <div key={field} className="flex flex-col"><label className="text-[10px] font-bold uppercase text-slate-500">{field}</label><select value={mapping[field]} onChange={(e) => setMapping({...mapping, [field]: e.target.value})} className="bg-slate-950 border border-slate-700 text-white text-sm rounded-lg p-2"><option value="">-- Ignorar --</option>{csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}</select></div>
+                                            ))}
+                                            <button onClick={processImport} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg mt-2">Confirmar</button>
+                                        </div>
+                                    </>
                                 )}
                                 {step === 3 && <div className="text-center"><LoadingSpinner size={40} color="text-green-500" /><p className="text-xs text-slate-400 mt-2">{importProgress.toFixed(0)}%</p></div>}
                             </div>
