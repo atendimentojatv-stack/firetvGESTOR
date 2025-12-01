@@ -119,12 +119,16 @@
           Save, Copy, Share2, FileText, Info, Pencil, Sparkles, Megaphone,
           BarChart3, ArrowLeft, Send, BrainCircuit, MessageSquare, Infinity, Mail, Key, UserCog,
           ChevronRight, Wallet, QrCode, Link, Wifi, WifiOff, Menu, Power, X, FileCode, Crown,
-          Download, Upload, FileSpreadsheet, Check
+          Download, Upload, FileSpreadsheet, Check, Activity, Terminal, Globe2
         } from 'lucide-react';
 
         // --- CONFIGURAÇÕES ---
         const defaultApiKey = ""; 
         
+        // --- CONFIGURAÇÃO DO SERVIDOR VPS (KINGHOST) ---
+        // ALTERE AQUI SE O IP MUDAR
+        const VPS_BOT_URL = "http://191.252.159.183:3000";
+
         const firebaseConfig = typeof __firebase_config !== 'undefined' 
             ? JSON.parse(__firebase_config) 
             : {
@@ -622,10 +626,19 @@
             // BOT WHATSAPP STATES
             const [botSession, setBotSession] = useState(null); 
             const [isBotLoading, setIsBotLoading] = useState(false);
-            const [botConnectionStatus, setBotConnectionStatus] = useState('disconnected'); // New state to track UI connection status
+            const [botConnectionStatus, setBotConnectionStatus] = useState('disconnected'); 
+            const [retryCount, setRetryCount] = useState(0);
+            const [debugLogs, setDebugLogs] = useState([]); // LOGS DE DEBUG
+            
+            // URL FIXA DO BOT - SEM EDIÇÃO
+            const botApiUrl = VPS_BOT_URL;
 
             const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
 
+            const addLog = (msg) => {
+                setDebugLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 10));
+            };
+            
             // --- INICIALIZAÇÃO ---
             useEffect(() => {
                 const init = async () => {
@@ -728,42 +741,62 @@
             // --- BOT WHATSAPP ---
             const connectBot = async () => {
                 setIsBotLoading(true);
+                addLog("Iniciando requisição para conectar bot...");
                 try {
-                    const response = await fetch(`https://manus-meta-bot-e65a957d7b93.herokuapp.com/sessions/start`, { 
+                    const response = await fetch(`${botApiUrl}/sessions/start`, { 
                         method: 'POST', 
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId: user.id })
                     });
+                    
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Erro ${response.status}: ${errorText}`);
+                    }
+                    
                     const data = await response.json();
-                    if (!response.ok) throw new Error(data.message || 'Falha ao iniciar bot.');
                     showToast("Gerando QR Code...");
-                } catch (e) { showToast(e.message, 'error'); }
+                    addLog("Solicitação de início enviada com sucesso.");
+                } catch (e) { 
+                    showToast(`Falha ao conectar: ${e.message}`, 'error'); 
+                    addLog(`Erro ao iniciar: ${e.message}`);
+                }
                 finally { setIsBotLoading(false); }
             };
 
             const disconnectBot = async () => {
                 setIsBotLoading(true);
+                addLog("Solicitando desconexão...");
                 try {
-                    await fetch(`https://manus-meta-bot-e65a957d7b93.herokuapp.com/sessions/stop`, { 
+                    await fetch(`${botApiUrl}/sessions/stop`, { 
                         method: 'POST', 
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId: user.id })
                     });
                     showToast("Bot desconectado.");
-                } catch (e) { showToast(e.message, 'error'); }
+                    addLog("Bot desconectado com sucesso.");
+                } catch (e) { 
+                    showToast(e.message, 'error');
+                    addLog(`Erro ao desconectar: ${e.message}`); 
+                }
                 finally { setIsBotLoading(false); }
             };
             
             const forceDisconnectBot = async () => {
                 setIsBotLoading(true);
+                addLog("Forçando reset do bot...");
                 try {
-                    await fetch(`https://manus-meta-bot-e65a957d7b93.herokuapp.com/sessions/force-stop`, { 
+                    await fetch(`${botApiUrl}/sessions/force-stop`, { 
                         method: 'POST', 
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId: user.id })
                     });
                     showToast("Bot resetado com força.");
-                } catch (e) { showToast(e.message, 'error'); }
+                    addLog("Bot resetado.");
+                } catch (e) { 
+                    showToast(e.message, 'error'); 
+                    addLog(`Erro ao resetar: ${e.message}`);
+                }
                 finally { setIsBotLoading(false); }
             };
 
@@ -771,16 +804,62 @@
                 setIsProcessing(true);
                 try {
                     const message = decodeURIComponent(generateWhatsAppMessage(client, user));
-                    const response = await fetch(`https://manus-meta-bot-e65a957d7b93.herokuapp.com/messages/send`, { 
+                    const response = await fetch(`${botApiUrl}/messages/send`, { 
                         method: 'POST', 
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId: user.id, to: `55${client.whatsapp}`, message })
                     });
+                    
+                    if (!response.ok) {
+                         const errorText = await response.text();
+                         throw new Error(`Erro no envio: ${errorText}`);
+                    }
+
                     const data = await response.json();
-                    if (!response.ok) throw new Error(data.message || 'Falha ao enviar.');
                     showToast("Mensagem enviada!");
                 } catch (e) { showToast(e.message, 'error'); }
                 finally { setIsProcessing(false); }
+            };
+
+            const handleManualReconnect = () => {
+                setBotConnectionStatus('connecting');
+                addLog("Tentativa manual de reconexão...");
+                setRetryCount(prev => prev + 1); 
+            };
+
+            const checkServerStatus = async () => {
+                addLog(`Testando conexão com: ${botApiUrl}`);
+                try {
+                    // Tenta bater na raiz ou endpoint de health check do bot
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+                    
+                    const res = await fetch(botApiUrl, { 
+                        method: 'GET',
+                        signal: controller.signal,
+                        mode: 'cors' // Força verificação de CORS
+                    });
+                    clearTimeout(timeoutId);
+                    
+                    if(res.ok || res.status === 404) {
+                        addLog(`✅ Servidor ONLINE! (Status: ${res.status})`);
+                        addLog("Se o QR Code não aparece, verifique os logs do Servidor.");
+                    } else {
+                        addLog(`⚠️ Servidor respondeu com erro: ${res.status}`);
+                    }
+                } catch (e) {
+                    // clearTimeout(timeoutId); 
+                    if (e.message === 'Failed to fetch' || e.name === 'TypeError') {
+                        addLog("❌ ERRO DE CONEXÃO: O navegador bloqueou o acesso.");
+                        addLog("Possíveis causas:");
+                        addLog("1. O servidor VPS está OFFLINE.");
+                        addLog("2. O servidor não permitiu CORS (Acesso Externo).");
+                        addLog("3. O link do servidor está errado ou sem porta (ex: :3000).");
+                        addLog("4. Conteúdo Misto: Painel HTTPS acessando API HTTP.");
+                    } else {
+                        addLog(`❌ ERRO CRÍTICO: ${e.name === 'AbortError' ? 'Tempo limite excedido (Server Lento)' : e.message}`);
+                    }
+                }
             };
 
             useEffect(() => {
@@ -791,29 +870,34 @@
                 const startStream = () => {
                     if (eventSource) eventSource.close();
 
+                    addLog(`Abrindo conexão SSE com ${botApiUrl}...`);
+                    
                     // Adicionado timestamp para evitar cache do navegador na conexão
-                    eventSource = new EventSource(`https://manus-meta-bot-e65a957d7b93.herokuapp.com/sessions/status/${user.id}?_t=${Date.now()}`);
+                    eventSource = new EventSource(`${botApiUrl}/sessions/status/${user.id}?_t=${Date.now()}`);
                     
                     setBotConnectionStatus('connecting');
 
                     eventSource.onopen = () => {
                         setBotConnectionStatus('connected');
+                        addLog("Conexão SSE estabelecida.");
                     };
 
                     eventSource.onmessage = (event) => {
                         try {
-                            if (event.data === 'ping') return; // Ignora pings de heartbeat se houver
+                            if (event.data === 'ping') return; 
                             const data = JSON.parse(event.data);
                             setBotSession(data);
+                            // Não logar tudo para não poluir, só mudanças importantes
+                            if(data.status === 'qrcode') addLog("QR Code recebido.");
+                            if(data.status === 'connected') addLog("Sessão WhatsApp conectada!");
                         } catch (e) { console.error("Erro JSON SSE", e); }
                     };
 
-                    // Adicionar listeners específicos caso o backend envie eventos nomeados
                     eventSource.addEventListener('qrcode', (event) => {
                          try {
                             const data = JSON.parse(event.data);
-                            // Mesclar com o estado atual ou atualizar
                             setBotSession(prev => ({...prev, status: 'qrcode', qrCode: data.qrCode || data})); 
+                            addLog("Evento QRCode recebido.");
                         } catch (e) { console.error("Erro QRCODE SSE", e); }
                     });
 
@@ -826,9 +910,11 @@
 
                     eventSource.onerror = (err) => {
                         console.error("Erro SSE:", err);
-                        setBotConnectionStatus('disconnected');
+                        setBotConnectionStatus('disconnected'); 
+                        // addLog("Conexão SSE perdida. Tentando reconectar em 5s...");
                         eventSource.close();
-                        retryTimeout = setTimeout(startStream, 5000); // Aumentado para 5s para evitar flood
+                        setTimeout(() => setBotConnectionStatus('reconnecting'), 100);
+                        retryTimeout = setTimeout(startStream, 5000); 
                     };
                 };
 
@@ -838,11 +924,12 @@
                     if (eventSource) eventSource.close();
                     if (retryTimeout) clearTimeout(retryTimeout);
                 };
-            }, [user]);
+            }, [user, retryCount]); // Removed botApiUrl as it is now constant
 
             const cancelBotConnection = () => {
                 if (user?.id) {
-                    fetch(`https://manus-meta-bot-e65a957d7b93.herokuapp.com/sessions/cancel`, { 
+                    addLog("Cancelando conexão...");
+                    fetch(`${botApiUrl}/sessions/cancel`, { 
                         method: 'POST', 
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId: user.id })
@@ -1684,7 +1771,18 @@
                                                     {botConnectionStatus === 'connecting' && <span className="text-yellow-500 text-xs animate-pulse">Sincronizando...</span>}
                                                     {botConnectionStatus === 'connected' && <span className="text-green-500 text-xs">● Sincronizado</span>}
                                                     {botConnectionStatus === 'disconnected' && <span className="text-red-500 text-xs">● Desconectado</span>}
+                                                    {botConnectionStatus === 'reconnecting' && <span className="text-yellow-500 text-xs animate-pulse">Reconectando...</span>}
                                                 </div>
+                                                
+                                                {/* Botão de Reconexão Manual */}
+                                                {(botConnectionStatus === 'disconnected' || botConnectionStatus === 'reconnecting') && (
+                                                    <div className="flex justify-end">
+                                                        <button onClick={handleManualReconnect} className="text-xs text-blue-400 hover:text-blue-300 underline flex items-center gap-1">
+                                                            <RefreshCw size={12} /> Reconectar agora
+                                                        </button>
+                                                    </div>
+                                                )}
+
                                                 <div className="flex flex-col items-center justify-center py-4 min-h-[300px]">
                                                     {botSession?.status === 'connected' ? (
                                                         <div className="text-center space-y-6 animate-fade-in">
@@ -1716,6 +1814,21 @@
                                                             <div className="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center mx-auto border-2 border-dashed border-slate-700"><WifiOff size={40} className="text-slate-500" /></div>
                                                             <button onClick={connectBot} disabled={isBotLoading} className="bg-green-600 hover:bg-green-500 text-white px-8 py-4 rounded-xl font-bold transition-all shadow-lg shadow-green-600/20 flex items-center gap-3 mx-auto hover:scale-105 transform">{isBotLoading ? <LoadingSpinner/> : <><QrCode size={20}/> Gerar QR Code</>}</button>
                                                         </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* LOGS DE DIAGNÓSTICO */}
+                                            <div className="mt-8 border-t border-slate-800 pt-4">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <h3 className="text-sm font-bold text-slate-400 flex items-center gap-2"><Activity size={14}/> Logs de Diagnóstico</h3>
+                                                    <button onClick={checkServerStatus} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded border border-slate-700 flex items-center gap-1"><Terminal size={12}/> Testar Servidor</button>
+                                                </div>
+                                                <div className="bg-black/50 p-3 rounded-lg h-32 overflow-y-auto font-mono text-[10px] text-slate-300 border border-slate-800/50">
+                                                    {debugLogs.length === 0 ? (
+                                                        <span className="text-slate-600 italic">Nenhum evento registrado.</span>
+                                                    ) : (
+                                                        debugLogs.map((log, i) => <div key={i} className="border-b border-slate-800/30 pb-1 mb-1 last:border-0">{log}</div>)
                                                     )}
                                                 </div>
                                             </div>
