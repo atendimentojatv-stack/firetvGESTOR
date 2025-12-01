@@ -183,17 +183,28 @@
             return end < new Date();
         };
 
+        // CORREÇÃO DA DATA: Lida com fusos horários para evitar a diferença de 1 dia (Problema do UTC 00:00:00)
         const getClientStatus = (dueDate) => {
             try {
                 if (!dueDate) return { status: 'no_date', label: 'Sem Data', color: 'slate' };
-                const today = new Date(); today.setHours(0, 0, 0, 0);
-                let due = new Date(dueDate);
-                if(dueDate.length === 10) due = new Date(dueDate + 'T00:00:00'); 
                 
-                if (isNaN(due.getTime())) return { status: 'no_date', label: 'Data Inválida', color: 'slate' };
+                const today = new Date(); 
+                // Zera as horas no fuso horário LOCAL para comparação correta
+                today.setHours(0, 0, 0, 0); 
+                
+                // Cria a data de vencimento no fuso horário LOCAL, ignorando o problema do UTC
+                const dateParts = dueDate.split('-'); // Espera AAAA-MM-DD
+                if (dateParts.length !== 3) return { status: 'no_date', label: 'Data Inválida', color: 'slate' };
+                
+                // Força a data de vencimento a ser tratada como o início do dia no fuso horário local
+                // Usando new Date(ano, mes-1, dia) para evitar o problema de fuso
+                const due = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2])); 
                 due.setHours(0, 0, 0, 0);
+
+                if (isNaN(due.getTime())) return { status: 'no_date', label: 'Data Inválida', color: 'slate' };
                 
-                const diffTime = due - today;
+                // Calcula a diferença em dias (garantindo arredondamento correto)
+                const diffTime = due.getTime() - today.getTime();
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                 if (diffDays < 0) return { status: 'expired', label: 'Vencido', color: 'red', days: diffDays };
@@ -205,48 +216,111 @@
             }
         };
 
-        const generateWhatsAppMessage = (client, userSettings) => {
-            if (!client) return "";
-            const { status, days } = getClientStatus(client.dueDate);
-            const company = userSettings?.companyName || "Fire Gestor";
-            const templates = userSettings?.messageTemplates || {};
-            const value = formatCurrency(client.value || 0);
+        const generateWhatsAppMessage = (item, userSettings, type = 'client') => {
+            if (!item) return "";
             
+            const isClient = type === 'client';
+            
+            const status = isClient ? getClientStatus(item.dueDate).status : 'team_contact';
+            const days = isClient ? getClientStatus(item.dueDate).days : 0;
+            
+            const company = userSettings?.companyName || "Fire Gestor";
+            // Templates agora estão aninhados sob 'client' e 'team'
+            const templates = userSettings?.messageTemplates?.[type] || {}; 
+            
+            // Variáveis comuns de cliente
+            const clientVars = {
+                '{nome}': item.name || '',
+                '{vencimento}': isClient ? formatDate(item.dueDate) : '',
+                '{dias}': isClient ? Math.abs(days) : '',
+                '{valor}': isClient ? formatCurrency(item.value || 0) : '',
+                '{empresa}': company
+            };
+            
+            // Variáveis adicionais de equipe/revenda
+            const teamVars = {
+                '{nome_revenda}': item.name || '',
+                '{master}': userSettings.name || 'Master',
+                '{email_revenda}': item.email || '',
+                '{whatsapp_revenda}': item.whatsapp || '',
+                '{valor_pago}': formatCurrency(item.valuePaid || 0)
+            };
+
             const defaultGreeting = `Olá *{nome}*, tudo bem? Aqui é do *{empresa}*.\n\n`;
             
-            const defaults = {
+            // Defaults para Clientes
+            const clientDefaults = {
                 expired: defaultGreeting + `⚠️ *SEU PLANO DE {valor} ESTÁ VENCIDO* há {dias} dias.\nEvite o corte do sinal, renove agora mesmo!`,
                 today: defaultGreeting + `⚠️ *ATENÇÃO:* Seu plano de {valor} vence *HOJE*.\nGaranta a renovação para não perder a programação.`,
                 expiring: defaultGreeting + `⏳ Seu plano ({valor}) vence em apenas *{dias} dias* ({vencimento}).\nQue tal já deixar renovado?`,
                 active: defaultGreeting + `✅ Seu plano de {valor} está ativo até *{vencimento}*.\nAgradecemos a preferência!`
             };
             
-            let template = templates[status] || defaults[status] || defaults.active;
-            
-            const message = template
-                .replace(/{nome}/g, client.name || '')
-                .replace(/{vencimento}/g, formatDate(client.dueDate))
-                .replace(/{dias}/g, Math.abs(days))
-                .replace(/{valor}/g, value)
-                .replace(/{empresa}/g, company);
+            // Default para Equipe (Contato Manual)
+            const teamDefault = `Olá *{nome_revenda}*, sou o Master *{master}*.\n\nPrecisamos conversar sobre o painel. Favor responder assim que possível.`;
 
-            return encodeURIComponent(message);
+            let template = isClient ? (templates[status] || clientDefaults[status] || clientDefaults.active) : (templates['team_contact'] || teamDefault);
+            
+            let message = template;
+            
+            // Substitui variáveis de Cliente
+            if (isClient) {
+                for (const key in clientVars) {
+                    message = message.replace(new RegExp(key, 'g'), clientVars[key]);
+                }
+            }
+            
+            // Substitui variáveis de Equipe
+            if (!isClient) {
+                 for (const key in teamVars) {
+                    message = message.replace(new RegExp(key, 'g'), teamVars[key]);
+                }
+            }
+
+            // Garante que variáveis de cliente não quebrem o template de equipe
+            if (!isClient) {
+                for (const key in clientVars) {
+                     message = message.replace(new RegExp(key, 'g'), '');
+                }
+            }
+            // Garante que variáveis de equipe não quebrem o template de cliente
+            if (isClient) {
+                 for (const key in teamVars) {
+                     message = message.replace(new RegExp(key, 'g'), '');
+                }
+            }
+
+            return message; // Retorna a mensagem não encodada para edição no modal
         };
 
         const callGemini = async (prompt, apiKey) => {
             const key = apiKey || defaultApiKey;
             if (!key) return "Chave de API não configurada.";
             try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${key}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                });
-                if (!response.ok) throw new Error('Falha na API');
+                // Implementação de backoff (simples)
+                const MAX_RETRIES = 3;
+                let response;
+                for (let i = 0; i < MAX_RETRIES; i++) {
+                    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+                    if (response.ok) break;
+                    if (response.status === 429 && i < MAX_RETRIES - 1) { // Too many requests
+                        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+                        continue;
+                    }
+                    throw new Error(`Falha na API com status ${response.status}`);
+                }
+
+                if (!response.ok) throw new Error('Falha final na API');
+
                 const data = await response.json();
                 return data.candidates[0].content.parts[0].text;
             } catch (error) {
-                return "Erro ao contatar a IA. Verifique a chave e a conexão.";
+                console.error("Erro na IA:", error);
+                return "Erro ao contatar a IA. Verifique a chave e a conexão. Detalhe: " + error.message;
             }
         };
 
@@ -276,13 +350,21 @@
             </button>
         );
 
+        // Componente auxiliar para ViewModal
+        const InfoField = ({ label, value, icon: Icon, fullWidth, color = 'text-slate-400' }) => (
+            <div className={`bg-slate-950 p-3 rounded-lg border border-slate-800 ${fullWidth ? 'col-span-2' : ''}`}>
+                <p className="text-[10px] font-bold uppercase text-slate-500 mb-1 flex items-center gap-1"><Icon size={12} className={color}/> {label}</p>
+                <p className="text-white font-medium break-all">{value}</p>
+            </div>
+        );
+
         const ImportExportModal = ({ isOpen, onClose, clients, user }) => {
             if (!isOpen) return null;
 
             const [step, setStep] = useState(1);
             const [csvData, setCsvData] = useState([]);
             const [csvHeaders, setCsvHeaders] = useState([]);
-            const [mapping, setMapping] = useState({ name: '', whatsapp: '', dueDate: '', value: '', username: '' });
+            const [mapping, setMapping] = useState({ name: '', whatsapp: '', dueDate: '', value: '', username: '', observation: '' }); // Adicionado observation
             const [importProgress, setImportProgress] = useState(0);
 
             const handleFileRead = (e) => {
@@ -323,6 +405,8 @@
                 const dueDateVariations = ['vencimento', 'data', 'due_date', 'duedate'];
                 const valueVariations = ['valor', 'price', 'value'];
                 const usernameVariations = ['usuario', 'login', 'username'];
+                const observationVariations = ['obs', 'observacao', 'notes']; // Adicionado
+                
 
                 headers.forEach(h => {
                     const lh = h.toLowerCase();
@@ -331,6 +415,7 @@
                     if (dueDateVariations.includes(lh) && !newMapping.dueDate) newMapping.dueDate = h;
                     if (valueVariations.includes(lh) && !newMapping.value) newMapping.value = h;
                     if (usernameVariations.includes(lh) && !newMapping.username) newMapping.username = h;
+                    if (observationVariations.includes(lh) && !newMapping.observation) newMapping.observation = h;
                 });
                 setMapping(newMapping);
             };
@@ -350,6 +435,7 @@
                         dueDate: formatDateForImport(row[mapping.dueDate]),
                         value: parseFloat((row[mapping.value] || '0').replace(',', '.')) || 0,
                         username: row[mapping.username] || '',
+                        observation: row[mapping.observation] || '', // Adicionado
                         createdBy: user.email,
                         createdAt: new Date().toISOString(),
                         status: 'active'
@@ -375,7 +461,6 @@
                 if (!dateStr) return null;
                 
                 // Passo 1: Ignora a hora (pega tudo antes do primeiro espaço)
-                // Isso corta "05/01/2025 14:30" para "05/01/2025"
                 const dateOnly = dateStr.split(' ')[0].trim();
 
                 const parts = dateOnly.split('/');
@@ -384,13 +469,12 @@
                     return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
                 }
                 
-                // Se já estiver no formato YYYY-MM-DD ou outro, retorna como está (mas sem a hora)
                 return dateOnly; 
             };
 
             const exportToCSV = () => {
                 let csvContent = "data:text/csv;charset=utf-8,";
-                csvContent += "Nome,WhatsApp,Vencimento,Valor,Usuario\r\n";
+                csvContent += "Nome,WhatsApp,Vencimento,Valor,Usuario,Observacao\r\n"; // Adicionado Observacao
 
                 clients.forEach(client => {
                     const row = [
@@ -398,7 +482,8 @@
                         client.whatsapp || '',
                         formatDate(client.dueDate) || '',
                         client.value || 0,
-                        client.username || ''
+                        client.username || '',
+                        (client.observation || '').replace(/,/g, ';') // Observação: Substituir vírgula por ponto e vírgula para não quebrar o CSV
                     ].join(",");
                     csvContent += row + "\r\n";
                 });
@@ -448,7 +533,8 @@
                                             {id: 'whatsapp', label: 'WhatsApp'},
                                             {id: 'dueDate', label: 'Data de Vencimento'},
                                             {id: 'value', label: 'Valor da Mensalidade'},
-                                            {id: 'username', label: 'Usuário/Login IPTV'}
+                                            {id: 'username', label: 'Usuário/Login IPTV'},
+                                            {id: 'observation', label: 'Observação'} // Adicionado
                                         ].map(field => (
                                             <div key={field.id} className="flex flex-col text-left">
                                                 <label className="text-[10px] font-bold uppercase text-slate-500 mb-1">{field.label} <span className="text-red-500">{field.id === 'name' || field.id === 'dueDate' ? '*' : ''}</span></label>
@@ -463,7 +549,7 @@
                                             </div>
                                         ))}
 
-                                        <button onClick={processImport} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg mt-2">
+                                        <button onClick={processImport} disabled={isProcessing} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg mt-2 disabled:opacity-50">
                                             Confirmar Importação
                                         </button>
                                     </div>
@@ -514,6 +600,20 @@
             const [searchTeamTerm, setSearchTeamTerm] = useState('');
             const [newMemberRole, setNewMemberRole] = useState("reseller");
 
+            // --- NOVOS STATES (Passo 1, 2, 7) ---
+            const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+            const [messageClient, setMessageClient] = useState(null);
+            const [messageText, setMessageText] = useState('');
+            const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+            const [viewingItem, setViewingItem] = useState(null); 
+            const [isPanelExpModalOpen, setIsPanelExpModalOpen] = useState(false); // Para CEO/Master
+            const [expDays, setExpDays] = useState(0); 
+            // ------------------------------------
+
+            // --- NOVO: Configurações de Mensagens (Passo 11) ---
+            const [messageTarget, setMessageTarget] = useState('client'); // 'client' ou 'team'
+            // --------------------------------------------------
+
             // SELEÇÃO EM MASSA (BULK ACTIONS)
             const [selectedClients, setSelectedClients] = useState([]);
 
@@ -554,11 +654,11 @@
                             batches.push(batch.commit());
                             await Promise.all(batches);
                             
-                            showToast(`${count} clientes foram excluídos.`);
+                            showToast(`Exclusão em massa de ${count} clientes concluída com sucesso!`, 'success');
                             setSelectedClients([]);
                             setConfirmDialog({ isOpen: false });
                         } catch (e) {
-                            showToast(e.message, 'error');
+                            showToast(`Sua solicitação falhou ao excluir clientes: ${e.message}`, 'error');
                         } finally {
                             setIsProcessing(false);
                         }
@@ -590,11 +690,11 @@
                             batches.push(batch.commit());
                             await Promise.all(batches);
 
-                            showToast(`${selectedClients.length} clientes foram excluídos.`);
+                            showToast(`Exclusão de ${selectedClients.length} clientes concluída com sucesso!`, 'success');
                             setSelectedClients([]);
                             setConfirmDialog({ isOpen: false });
                         } catch (e) {
-                            showToast(e.message, 'error');
+                            showToast(`Sua solicitação falhou ao excluir clientes selecionados: ${e.message}`, 'error');
                         } finally {
                             setIsProcessing(false);
                         }
@@ -619,6 +719,7 @@
             // Config & Security
             const [msgCompany, setMsgCompany] = useState("Fire Gestor");
             const [msgTemplates, setMsgTemplates] = useState({});
+            // Passo 12: Ajustes de Segurança
             const [newEmail, setNewEmail] = useState('');
             const [newPassword, setNewPassword] = useState('');
             const [currentPassword, setCurrentPassword] = useState('');
@@ -633,11 +734,52 @@
             // URL FIXA DO BOT - SEM EDIÇÃO
             const botApiUrl = VPS_BOT_URL;
 
+            // Função de notificação (Toast)
             const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
 
             const addLog = (msg) => {
                 setDebugLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 10));
             };
+
+            // --- LÓGICA DO MODAL DE MENSAGEM (Passo 1) ---
+            const handleOpenMessageModal = (client, type = 'client') => {
+                setMessageClient(client);
+                // Gero a mensagem padrão
+                const waMessage = generateWhatsAppMessage(client, user, type);
+                setMessageText(waMessage);
+                setIsMessageModalOpen(true);
+            };
+
+            const sendBotMessageFromModal = async () => {
+                if (!messageClient || !messageText) return;
+
+                setIsProcessing(true);
+                try {
+                    const response = await fetch(`${botApiUrl}/messages/send`, { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            sessionId: user.id, 
+                            to: `55${messageClient.whatsapp.replace(/\D/g,'')}`, 
+                            message: messageText // Envia o texto editado
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                         const errorText = await response.text();
+                         throw new Error(`Erro no envio: ${errorText}`);
+                    }
+
+                    // Notificação de sucesso
+                    showToast("Mensagem enviada com sucesso!", 'success'); 
+                    setIsMessageModalOpen(false);
+                    setMessageText(''); // Limpa o texto após o envio
+                } catch (e) { 
+                    showToast(`Sua solicitação falhou ao enviar mensagem: ${e.message}`, 'error'); 
+                }
+                finally { setIsProcessing(false); }
+            };
+            // ------------------------------------
             
             // --- INICIALIZAÇÃO ---
             useEffect(() => {
@@ -685,7 +827,11 @@
             useEffect(() => {
                 if (user) {
                     setMsgCompany(user.companyName || "Fire Gestor");
-                    setMsgTemplates(user.messageTemplates || {});
+                    // Garantir que messageTemplates seja um objeto com 'client' e 'team' ou inicializar
+                    const initialTemplates = user.messageTemplates || { client: {}, team: {} };
+                    if (!initialTemplates.client) initialTemplates.client = {};
+                    if (!initialTemplates.team) initialTemplates.team = {};
+                    setMsgTemplates(initialTemplates);
                 }
             }, [user]);
 
@@ -698,7 +844,7 @@
                     setView('landing');
                     window.location.reload(); 
                 } catch (e) {
-                    console.error("Erro logout", e);
+                    showToast("Sua solicitação falhou ao sair: " + e.message, 'error');
                 }
             };
 
@@ -758,7 +904,7 @@
                     showToast("Gerando QR Code...");
                     addLog("Solicitação de início enviada com sucesso.");
                 } catch (e) { 
-                    showToast(`Falha ao conectar: ${e.message}`, 'error'); 
+                    showToast(`Sua solicitação falhou ao conectar: ${e.message}`, 'error'); 
                     addLog(`Erro ao iniciar: ${e.message}`);
                 }
                 finally { setIsBotLoading(false); }
@@ -773,10 +919,10 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId: user.id })
                     });
-                    showToast("Bot desconectado.");
+                    showToast("Bot desconectado.", 'success');
                     addLog("Bot desconectado com sucesso.");
                 } catch (e) { 
-                    showToast(e.message, 'error');
+                    showToast(`Sua solicitação falhou ao desconectar: ${e.message}`, 'error');
                     addLog(`Erro ao desconectar: ${e.message}`); 
                 }
                 finally { setIsBotLoading(false); }
@@ -791,35 +937,17 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId: user.id })
                     });
-                    showToast("Bot resetado com força.");
+                    showToast("Bot resetado com força.", 'success');
                     addLog("Bot resetado.");
                 } catch (e) { 
-                    showToast(e.message, 'error'); 
+                    showToast(`Sua solicitação falhou ao forçar reset: ${e.message}`, 'error'); 
                     addLog(`Erro ao resetar: ${e.message}`);
                 }
                 finally { setIsBotLoading(false); }
             };
 
-            const sendBotMessage = async (client) => {
-                setIsProcessing(true);
-                try {
-                    const message = decodeURIComponent(generateWhatsAppMessage(client, user));
-                    const response = await fetch(`${botApiUrl}/messages/send`, { 
-                        method: 'POST', 
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ sessionId: user.id, to: `55${client.whatsapp}`, message })
-                    });
-                    
-                    if (!response.ok) {
-                         const errorText = await response.text();
-                         throw new Error(`Erro no envio: ${errorText}`);
-                    }
-
-                    const data = await response.json();
-                    showToast("Mensagem enviada!");
-                } catch (e) { showToast(e.message, 'error'); }
-                finally { setIsProcessing(false); }
-            };
+            // Antiga sendBotMessage, agora usa o modal (manter aqui caso precise, mas a nova lógica é via sendBotMessageFromModal)
+            // const sendBotMessage = async (client) => { /* ... */ }; 
 
             const handleManualReconnect = () => {
                 setBotConnectionStatus('connecting');
@@ -844,20 +972,19 @@
                     if(res.ok || res.status === 404) {
                         addLog(`✅ Servidor ONLINE! (Status: ${res.status})`);
                         addLog("Se o QR Code não aparece, verifique os logs do Servidor.");
+                        showToast("Servidor Bot Online!", 'success');
                     } else {
                         addLog(`⚠️ Servidor respondeu com erro: ${res.status}`);
+                        showToast(`Servidor Bot respondeu com erro: ${res.status}`, 'error');
                     }
                 } catch (e) {
                     // clearTimeout(timeoutId); 
                     if (e.message === 'Failed to fetch' || e.name === 'TypeError') {
                         addLog("❌ ERRO DE CONEXÃO: O navegador bloqueou o acesso.");
-                        addLog("Possíveis causas:");
-                        addLog("1. O servidor VPS está OFFLINE.");
-                        addLog("2. O servidor não permitiu CORS (Acesso Externo).");
-                        addLog("3. O link do servidor está errado ou sem porta (ex: :3000).");
-                        addLog("4. Conteúdo Misto: Painel HTTPS acessando API HTTP.");
+                        showToast("Erro: Servidor Bot Offline ou bloqueio de CORS.", 'error');
                     } else {
                         addLog(`❌ ERRO CRÍTICO: ${e.name === 'AbortError' ? 'Tempo limite excedido (Server Lento)' : e.message}`);
+                        showToast(`Erro Crítico na Conexão Bot: ${e.message}`, 'error');
                     }
                 }
             };
@@ -889,7 +1016,7 @@
                             setBotSession(data);
                             // Não logar tudo para não poluir, só mudanças importantes
                             if(data.status === 'qrcode') addLog("QR Code recebido.");
-                            if(data.status === 'connected') addLog("Sessão WhatsApp conectada!");
+                            if(data.status === 'connected') { addLog("Sessão WhatsApp conectada!"); showToast("Bot WhatsApp Conectado!", 'success'); }
                         } catch (e) { console.error("Erro JSON SSE", e); }
                     };
 
@@ -934,6 +1061,35 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId: user.id })
                     });
+                    showToast("Conexão cancelada.", 'success');
+                }
+            };
+
+            // --- LÓGICA DE AJUSTE DE DIAS (Passo 7) ---
+            const handleExpDaysChange = async (e) => {
+                e.preventDefault();
+                if (!editingItem || modalType !== 'user' || expDays === 0) {
+                    return showToast("Ajuste um número de dias válido.", 'error');
+                }
+                
+                setIsProcessing(true);
+                try {
+                    let currentExp = new Date(editingItem.panelExpiration);
+                    // Garante que a data inicial seja válida (se não, começa de agora)
+                    if (isNaN(currentExp.getTime()) || currentExp < new Date()) currentExp = new Date(); 
+                    
+                    const newDate = new Date(currentExp);
+                    newDate.setDate(newDate.getDate() + expDays); // Adiciona ou subtrai
+
+                    await updateDoc(doc(getUsersCollection(), editingItem.id), { panelExpiration: newDate.toISOString() });
+                    
+                    showToast(`Dias do painel de ${editingItem.name} ajustados!`, 'success');
+                    setIsPanelExpModalOpen(false);
+                    setExpDays(0);
+                } catch (e) {
+                    showToast(`Sua solicitação falhou em ajustar dias: ${e.message}`, 'error');
+                } finally {
+                    setIsProcessing(false);
                 }
             };
 
@@ -943,23 +1099,40 @@
                 setIsProcessing(true);
                 try {
                     if (modalType === 'client') {
+                        // Passo 3: Adicionar Observação (Client)
                         const payload = { ...formData };
+                        payload.whatsapp = payload.whatsapp ? payload.whatsapp.replace(/\D/g, '') : '';
+                        payload.observation = payload.observation || ''; 
+                        
                         if (editingItem) {
                             await updateDoc(doc(getClientsCollection(), editingItem.id), payload);
-                            showToast('Cliente atualizado!');
+                            // Notificação de edição
+                            showToast('Cliente editado com sucesso!', 'success');
                         } else {
-                            await addDoc(getClientsCollection(), { ...payload, createdBy: user.email, createdAt: new Date().toISOString(), status: 'active' });
-                            showToast('Cliente criado!');
+                            await addDoc(getClientsCollection(), { 
+                                ...payload, 
+                                createdBy: user.email, 
+                                createdAt: new Date().toISOString(), 
+                                status: 'active' 
+                            });
+                            // Notificação de criação
+                            showToast('Cliente criado com sucesso!', 'success');
                         }
                     } else {
                         // SEGURANÇA: Bloqueia revenda de criar time
-                        if (user.role === 'reseller') throw new Error("Permissão negada: Revenda não pode criar equipe.");
+                        if (user.role === 'reseller' && !editingItem) throw new Error("Permissão negada: Revenda não pode criar equipe.");
 
+                        const uPayload = { ...formData };
+                        if (user.role === 'ceo') uPayload.role = newMemberRole;
+                        // Passo 6: Adicionar WhatsApp, Valor Pago e Observação (User)
+                        uPayload.whatsapp = uPayload.whatsapp ? uPayload.whatsapp.replace(/\D/g, '') : ''; 
+                        uPayload.valuePaid = parseFloat(uPayload.valuePaid) || 0; 
+                        uPayload.observation = uPayload.observation || ''; 
+                        
                         if (editingItem) {
-                            const uPayload = { ...formData };
-                            if (user.role === 'ceo') uPayload.role = newMemberRole;
                             await updateDoc(doc(getUsersCollection(), editingItem.id), uPayload);
-                            showToast('Membro atualizado!');
+                            // Notificação de edição
+                            showToast('Revenda editada com sucesso!', 'success');
                         } else {
                             const qCheck = query(getUsersCollection(), where('email', '==', formData.email));
                             const snap = await getDocs(qCheck);
@@ -975,13 +1148,17 @@
                                     ...formData, 
                                     role: r, 
                                     parentId: user.email, 
+                                    whatsapp: uPayload.whatsapp, 
+                                    valuePaid: uPayload.valuePaid, 
+                                    observation: uPayload.observation,
                                     createdAt: serverTimestamp(), 
                                     status: 'active', 
                                     panelExpiration: exp.toISOString(), 
                                     isInvite: true,
                                     plan: 'trial'
                                 });
-                                showToast('Convite criado! Usuário já pode cadastrar.');
+                                // Notificação de criação
+                                showToast('Convite de usuário criado com sucesso!', 'success');
                             }
                         }
                     }
@@ -989,7 +1166,7 @@
                     setFormData({});
                     setEditingItem(null);
                 } catch (e) {
-                    showToast(e.message, 'error');
+                    showToast(`Sua solicitação falhou em salvar: ${e.message}`, 'error');
                 } finally {
                     setIsProcessing(false);
                 }
@@ -999,87 +1176,150 @@
                 const isUser = type === 'user';
                 setConfirmDialog({
                     isOpen: true,
-                    title: isUser ? 'Excluir Membro?' : 'Excluir Cliente?',
-                    message: isUser ? 'O usuário perderá o acesso.' : 'O histórico será apagado.',
+                    title: isUser ? 'Excluir Membro (RAIZ)?' : 'Excluir Cliente?',
+                    message: isUser ? 'Esta ação é *irreversível* e apagará a conta do revenda e todos os seus dados permanentemente.' : 'O histórico será apagado.',
                     onConfirm: async () => {
                         setIsProcessing(true);
                         try {
-                            if (isUser) await deleteDoc(doc(getUsersCollection(), id));
+                            if (isUser) await deleteDoc(doc(getUsersCollection(), id)); // Passo 8: Exclusão da Raiz
                             else await deleteDoc(doc(getClientsCollection(), id));
-                            showToast('Removido com sucesso.');
+                            showToast('Removido com sucesso.', 'success');
                             setConfirmDialog({ isOpen: false });
-                        } catch(e) { showToast(e.message, 'error'); } 
+                        } catch(e) { showToast(`Sua solicitação falhou ao excluir: ${e.message}`, 'error'); } 
                         finally { setIsProcessing(false); }
                     }
                 });
             };
 
+            // Lógica de Renovação, usando ConfirmDialog para confirmar a ação
             const handleRenew = (item, type) => {
                 const isUser = type === 'user';
+                
                 setConfirmDialog({
                     isOpen: true,
                     title: 'Renovar Assinatura',
-                    message: 'Adicionar 30 dias ao vencimento?',
+                    message: 'Deseja realmente adicionar 30 dias ao vencimento?',
                     onConfirm: async () => {
                         setIsProcessing(true);
+                        // Fechando o modal ANTES de disparar o toast, mas DENTRO do onConfirm para garantir que só feche após o clique.
+                        setConfirmDialog({ isOpen: false }); 
                         try {
                             if (isUser) {
-                                let e = new Date(); e.setDate(e.getDate() + 30);
+                                let e = new Date(); 
+                                let currentExp = new Date(item.panelExpiration);
+                                if (!isNaN(currentExp.getTime()) && currentExp > e) e = currentExp;
+                                e.setDate(e.getDate() + 30);
+
                                 await updateDoc(doc(getUsersCollection(), item.id), { panelExpiration: e.toISOString(), plan: 'renewed' });
+                                
+                                showToast('Renovação da Equipe aplicada com sucesso!', 'success'); 
                             } else {
                                 let b = new Date();
                                 let currentDue = new Date(item.dueDate);
                                 if (!isNaN(currentDue.getTime()) && currentDue > b) b = currentDue;
                                 b.setDate(b.getDate() + 30);
-                                const n = b.toISOString().split('T')[0];
-                                await updateDoc(doc(getClientsCollection(), item.id), { dueDate: n, status: 'active' });
+                                const newDueDate = b.toISOString().split('T')[0];
+                                
+                                await updateDoc(doc(getClientsCollection(), item.id), { dueDate: newDueDate, status: 'active' });
+                                
+                                showToast('Renovação do Cliente aplicada com sucesso!', 'success');
+                                
+                                // 2. Envio de WhatsApp (apenas para clientes)
+                                if (item.whatsapp && botSession?.status === 'connected') {
+                                    const activeItem = {...item, dueDate: newDueDate}; 
+                                    const message = generateWhatsAppMessage(activeItem, user, 'client');
+                                    
+                                    await fetch(`${botApiUrl}/messages/send`, { 
+                                        method: 'POST', 
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ sessionId: user.id, to: `55${item.whatsapp.replace(/\D/g,'')}`, message })
+                                    });
+                                }
                             }
-                            showToast('Renovado com sucesso!');
-                            setConfirmDialog({ isOpen: false });
-                        } catch(e) { showToast(e.message, 'error'); } 
-                        finally { setIsProcessing(false); }
+                        } catch(e) { 
+                            showToast(`Sua solicitação falhou na renovação: ${e.message}`, 'error'); 
+                        } 
+                        finally { 
+                            setIsProcessing(false); 
+                        }
                     }
                 });
             };
 
+            // Passo 12: Lógica de atualização de perfil (Email Antigo/Novo, Senha Antiga/Nova)
             const handleUpdateProfile = async (e) => {
                 e.preventDefault();
                 if (!currentPassword) return showToast("Digite sua senha atual.", 'error');
+                
+                if (!newEmail && !newPassword) return showToast("Preencha o novo e-mail ou a nova senha para alterar.", 'error');
+                
                 setIsProcessing(true);
                 try {
                     const c = auth.currentUser;
+                    
+                    // 1. Reautenticação OBRIGATÓRIA com a senha atual
                     const cred = EmailAuthProvider.credential(c.email, currentPassword);
                     await reauthenticateWithCredential(c, cred);
                     
+                    // 2. Atualização de Email
                     if (newEmail && newEmail !== c.email) {
                         await verifyBeforeUpdateEmail(c, newEmail);
-                        showToast("Link de confirmação enviado para o novo e-mail!");
+                        // showToast("Link de confirmação enviado para o novo e-mail!", 'success'); // Notificação movida para o final
                     }
+
+                    // 3. Atualização de Senha
                     if (newPassword) {
                         await updatePassword(c, newPassword);
-                        showToast("Senha alterada!");
+                        // showToast("Senha alterada!", 'success'); // Notificação movida para o final
                     }
+                    
+                    // Limpa os campos após sucesso
                     setNewEmail(''); setNewPassword(''); setCurrentPassword('');
+                    showToast("Perfil atualizado com sucesso!", 'success'); // Notificação final
                 } catch (e) {
-                    showToast("Erro: " + e.message, 'error');
+                    const msg = e.message.includes('auth/wrong-password') ? 'Senha atual incorreta. Tente novamente.' : 
+                                e.message.includes('auth/invalid-email') ? 'Novo e-mail inválido.' : 
+                                "Sua solicitação falhou ao atualizar perfil: " + e.message;
+                    showToast(msg, 'error');
                 } finally {
                     setIsProcessing(false);
                 }
             };
 
+            // --- Lógica de Salvar Mensagens (Ajustada para o novo formato) ---
             const handleSaveMessageConfig = async (e) => {
                 e.preventDefault();
                 setIsProcessing(true);
                 try {
-                    const updatedUser = { ...user, companyName: msgCompany, messageTemplates: msgTemplates };
-                    if (userApiKey) localStorage.setItem('firetv_ai_key', userApiKey);
-                    else localStorage.removeItem('firetv_ai_key');
-                    await updateDoc(doc(getUsersCollection(), user.id), { companyName: msgCompany, messageTemplates: msgTemplates });
+                    // Garantir que a estrutura client/team exista antes de salvar
+                    const newTemplates = {
+                        client: msgTemplates.client || {},
+                        team: msgTemplates.team || {}
+                    };
+
+                    const updatedUser = { ...user, companyName: msgCompany, messageTemplates: newTemplates };
+
+                    if (userApiKey) {
+                         localStorage.setItem('firetv_ai_key', userApiKey);
+                         showToast("Chave API salva com sucesso!", 'success'); // Notificação para API Key
+                    } else {
+                         localStorage.removeItem('firetv_ai_key');
+                         // Não mostra notificação de sucesso se apenas limpou a chave, mas mostra se salvou outras configs.
+                    }
+
+                    await updateDoc(doc(getUsersCollection(), user.id), { 
+                        companyName: msgCompany, 
+                        messageTemplates: newTemplates 
+                    });
+                    
                     setUser(updatedUser);
                     localStorage.setItem('firetv_user_session', JSON.stringify(updatedUser));
-                    showToast("Configurações salvas!");
+                    // Notificação para Configurações de Mensagem
+                    if (!userApiKey) { // Evita duplicidade se a API Key também foi salva
+                        showToast("Configurações salvas!", 'success');
+                    }
                 } catch (e) {
-                    showToast("Erro ao salvar: " + e.message, 'error');
+                    showToast(`Sua solicitação falhou ao salvar configurações: ${e.message}`, 'error');
                 } finally {
                     setIsProcessing(false);
                 }
@@ -1098,13 +1338,20 @@
                     p = `Atue como um Marqueteiro Digital focado em IPTV. Crie 3 opções de textos curtos e persuasivos para WhatsApp focados em vender assinaturas para o evento: "${aiEvent}". Use gatilhos de escassez e emojis.`;
                 } else if (type === 'consultant') {
                     const activeC = clients.filter(c => ['active','today','expiring'].includes(getClientStatus(c.dueDate).status)).length;
-                    const expiredC = clients.length - activeC;
+                    const expiredC = clients.filter(c => getClientStatus(c.dueDate).status === 'expired').length;
                     p = `Atue como Consultor de Negócios. Analise meus dados: Total de Clientes: ${clients.length}. Ativos: ${activeC}. Vencidos/Inativos: ${expiredC}. Me dê 3 estratégias práticas e curtas para aumentar a retenção e recuperar os vencidos.`;
                 }
 
-                const text = await callGemini(p, userApiKey);
-                setAiResponse(text);
+                try {
+                    const text = await callGemini(p, userApiKey);
+                    setAiResponse(text);
+                    showToast("Resposta da IA gerada com sucesso!", 'success');
+                } catch(e) {
+                    showToast(`Sua solicitação falhou na IA: ${e.message}`, 'error');
+                }
+                
                 setAiLoading(false);
+                setAiInput(''); // Passo 10: Limpar input após envio
             };
 
             // --- FILTROS ---
@@ -1117,7 +1364,12 @@
                     if (filterStatus === 'active') return ['active','today','expiring'].includes(s);
                     if (filterStatus === 'expired') return s === 'expired';
                     return true;
-                }).sort((a, b) => new Date(a.dueDate || '2099-01-01') - new Date(b.dueDate || '2099-01-01'));
+                }).sort((a, b) => {
+                     // Ordenação precisa usando a data local (sem problemas de fuso)
+                    const dateA = new Date(a.dueDate); dateA.setHours(0, 0, 0, 0);
+                    const dateB = new Date(b.dueDate); dateB.setHours(0, 0, 0, 0);
+                    return dateA - dateB;
+                });
             }, [clients, searchTerm, filterStatus]);
 
             const filteredTeam = useMemo(() => {
@@ -1189,7 +1441,7 @@
                     try {
                         if (resetMode) {
                             await sendPasswordResetEmail(auth, email);
-                            showToast("Email de recuperação enviado!");
+                            showToast("Email de recuperação enviado!", 'success');
                             setResetMode(false);
                         } else if (authType === 'register') {
                             if (whatsapp.length < 10) throw new Error("WhatsApp inválido.");
@@ -1272,7 +1524,7 @@
                     <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 animate-fade-in">
                         <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl">
                             <h3 className="font-bold text-white text-lg mb-2">{confirmDialog.title}</h3>
-                            <p className="text-slate-400 text-sm mb-6">{confirmDialog.message}</p>
+                            <p className="text-slate-400 text-sm mb-6" dangerouslySetInnerHTML={{__html: confirmDialog.message}}></p>
                             <div className="flex justify-end gap-3">
                                 <button onClick={() => setConfirmDialog({ isOpen: false })} className="px-4 py-2 rounded-lg text-slate-300 font-bold text-sm hover:bg-slate-800">Cancelar</button>
                                 <button onClick={() => { confirmDialog.onConfirm(); }} className="px-4 py-2 rounded-lg bg-red-600 text-white font-bold text-sm hover:bg-red-500">Confirmar</button>
@@ -1292,8 +1544,145 @@
 
                 if (!notification.show) return null;
                 const colors = { success: 'bg-green-500', error: 'bg-red-500' };
-                return <div className={`fixed bottom-24 md:bottom-5 right-5 ${colors[notification.type]} text-white px-5 py-3 rounded-xl shadow-2xl animate-slide-in`}>{notification.message}</div>;
+                // Aumentado o z-index para garantir que fique sempre no topo
+                return <div className={`fixed bottom-24 md:bottom-5 right-5 ${colors[notification.type]} text-white px-5 py-3 rounded-xl shadow-2xl animate-slide-in z-[999]`}>{notification.message}</div>;
             };
+
+            // --- NOVO: Modal de Edição/Envio de Mensagem (Passo 1) ---
+            const MessageModal = () => {
+                if (!isMessageModalOpen || !messageClient) return null;
+
+                const handleSend = () => {
+                    if (!messageText.trim()) {
+                        return showToast("A mensagem não pode estar vazia.", 'error');
+                    }
+                    sendBotMessageFromModal();
+                };
+
+                return (
+                    <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 animate-fade-in backdrop-blur-sm">
+                        <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 shadow-2xl relative">
+                            <button onClick={() => setIsMessageModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400 hover:text-white"><XCircle size={20}/></button>
+                            <h3 className="font-bold text-white text-xl mb-2 flex items-center gap-2"><Send size={20} className="text-purple-500"/> Enviar Mensagem Bot</h3>
+                            <p className="text-sm text-slate-400 mb-6">Editando mensagem para: <span className="font-bold text-white">{messageClient.name}</span></p>
+
+                            <div className="space-y-4">
+                                <label className="text-xs font-bold text-slate-500 ml-1 block">MENSAGEM (Edite abaixo)</label>
+                                <textarea 
+                                    rows="8"
+                                    value={messageText} 
+                                    onChange={e => setMessageText(e.target.value)} 
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-purple-500 text-white text-sm resize-none" 
+                                />
+                                
+                                <button onClick={handleSend} disabled={isProcessing || !messageText.trim()} className="w-full bg-purple-600 hover:bg-purple-500 py-3.5 rounded-xl font-bold text-white shadow-lg shadow-purple-600/20 transition-all flex justify-center items-center gap-2 disabled:opacity-50">
+                                    {isProcessing ? <LoadingSpinner /> : <><MessageCircle size={18} /> Enviar via Bot</>}
+                                </button>
+                                <a 
+                                    href={`https://wa.me/55${messageClient.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(messageText)}`} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="w-full bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white py-2 rounded-xl font-bold text-sm border border-green-600/20 transition-all flex justify-center items-center gap-2"
+                                >
+                                    <MessageCircle size={16} /> Abrir no WhatsApp Web
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // --- NOVO: Modal de Visualização (Passos 2 e 9) ---
+            const ViewModal = () => {
+                if (!isViewModalOpen || !viewingItem) return null;
+
+                const isClient = viewingItem.email === undefined; // Check if it's a client
+                const itemData = viewingItem;
+
+                const panelStatus = isClient ? null : getClientStatus(itemData.panelExpiration);
+                
+                return (
+                    <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 animate-fade-in backdrop-blur-sm">
+                        <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
+                            <button onClick={() => setIsViewModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400 hover:text-white"><XCircle size={20}/></button>
+                            <h3 className="font-bold text-white text-xl mb-4 flex items-center gap-2"><Info size={20} className="text-orange-500"/> Detalhes de {isClient ? 'Cliente' : 'Membro'}</h3>
+                            
+                            <div className="space-y-4 text-sm">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <InfoField label="Nome" value={itemData.name} icon={UserPlus} />
+                                    <InfoField label="WhatsApp" value={itemData.whatsapp || 'N/A'} icon={Smartphone} />
+                                </div>
+
+                                {isClient && (
+                                    <>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <InfoField label="Vencimento" value={formatDate(itemData.dueDate)} icon={Calendar} />
+                                            <InfoField label="Valor" value={formatCurrency(itemData.value)} icon={DollarSign} />
+                                        </div>
+                                        <InfoField label="Login IPTV" value={itemData.username || 'N/A'} icon={Wifi} />
+                                    </>
+                                )}
+                                
+                                {!isClient && (
+                                    <>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <InfoField label="E-mail" value={itemData.email} icon={Mail} />
+                                            <InfoField label="Cargo" value={<RoleBadge role={itemData.role} />} icon={UserCog} />
+                                        </div>
+                                         <div className="grid grid-cols-2 gap-4">
+                                            <InfoField label="Criado por" value={itemData.parentId || 'N/A'} icon={UserCog} color="text-red-400" />
+                                            <InfoField label="Pago" value={formatCurrency(itemData.valuePaid)} icon={Wallet} />
+                                        </div>
+                                        <InfoField label="Expiração do Painel" value={`${panelStatus.label} (${getDaysLeft(itemData.panelExpiration)} dias)`} icon={Clock} />
+                                    </>
+                                )}
+
+                                <div className="pt-4 border-t border-slate-800">
+                                     <InfoField label="Observação" value={itemData.observation || 'Nenhuma'} icon={FileText} fullWidth />
+                                </div>
+                               
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // --- NOVO: Modal de Ajuste de Dias (Passo 7) ---
+            const PanelExpModal = () => {
+                if (!isPanelExpModalOpen || !editingItem || modalType !== 'user') return null;
+
+                return (
+                    <div className="fixed inset-0 bg-black/80 z-[85] flex items-center justify-center p-4 animate-fade-in backdrop-blur-sm">
+                        <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative">
+                            <button onClick={() => {setIsPanelExpModalOpen(false); setExpDays(0);}} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400 hover:text-white"><XCircle size={20}/></button>
+                            <h3 className="font-bold text-white text-xl mb-4 flex items-center gap-2"><Clock size={20} className="text-blue-500"/> Ajustar Expiração</h3>
+                            <p className="text-sm text-slate-400 mb-6">Ajuste os dias do painel de <span className="font-bold text-white">{editingItem.name}</span>.</p>
+
+                            <form onSubmit={handleExpDaysChange} className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 ml-1 block">DIAS PARA AJUSTAR (ex: 30 para adicionar, -5 para reduzir)</label>
+                                    <input 
+                                        type="number" 
+                                        required 
+                                        value={expDays} 
+                                        onChange={e => setExpDays(parseInt(e.target.value) || 0)} 
+                                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-blue-500 text-white text-xl text-center"
+                                        placeholder="Ex: 30"
+                                    />
+                                </div>
+                                <p className={`text-xs text-center font-bold ${expDays > 0 ? 'text-green-400' : (expDays < 0 ? 'text-red-400' : 'text-slate-500')}`}>
+                                    Isso irá {expDays >= 0 ? 'ADICIONAR' : 'REDUZIR'} <span className="text-2xl">{Math.abs(expDays)}</span> dias.
+                                </p>
+                                <button type="submit" disabled={isProcessing || expDays === 0} className="w-full bg-blue-600 hover:bg-blue-500 py-3.5 rounded-xl font-bold text-white shadow-lg shadow-blue-600/20 transition-all flex justify-center items-center gap-2 disabled:opacity-50">
+                                    {isProcessing ? <LoadingSpinner /> : 'Confirmar Ajuste'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            };
+            // ------------------------------------
+
 
             if (view === 'landing') {
                 return (
@@ -1325,6 +1714,9 @@
                     <ConfirmDialog />
                     <Notification />
                     <ImportExportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} clients={clients} user={user} />
+                    {isMessageModalOpen && <MessageModal />} {/* NOVO: Modal de Edição/Envio de Mensagem */}
+                    {isViewModalOpen && <ViewModal />}       {/* NOVO: Modal de Visualização */}
+                    {isPanelExpModalOpen && <PanelExpModal />} {/* NOVO: Modal de Ajuste de Dias */}
 
                     {/* Sidebar */}
                     <aside className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800">
@@ -1373,7 +1765,7 @@
                     <main className="flex-1 overflow-y-auto bg-slate-950 relative pt-20 pb-24 md:pt-0 md:pb-0">
                         <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-full">
                             {/* Header */}
-                            {activeTab !== 'ai' && activeTab !== 'settings' && (
+                            {activeTab !== 'ai' && activeTab !== 'settings' && activeTab !== 'team' && (
                                 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 animate-fade-in">
                                     <div>
                                         <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
@@ -1385,7 +1777,7 @@
                                         {/* Botão de Importação apenas na aba Clientes */}
                                         {activeTab === 'clients' && (
                                             <button onClick={() => setIsImportModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2.5 rounded-xl flex items-center gap-2 font-bold border border-slate-700 transition-all text-sm">
-                                                <FileSpreadsheet size={18} /> <span className="hidden md:inline">Importar/Exportar</span>
+                                                <FileSpreadsheet size={18} /> Importar/Exportar
                                             </button>
                                         )}
                                         {/* BOTÃO NOVO CADASTRO */}
@@ -1398,13 +1790,32 @@
                                 </header>
                             )}
 
+                            {/* Header da aba TEAM, ajustado para sumir quando bloqueado (Passo 3) */}
+                            {activeTab === 'team' && user.role !== 'reseller' && (
+                                 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 animate-fade-in">
+                                    <div>
+                                        <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">Gestão de Equipe</h1>
+                                        <p className="text-slate-400 text-sm mt-1">{user.role === 'ceo' ? 'Painel Administrativo' : 'Gestão da Revenda'}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {canAdd && (
+                                            <button onClick={() => { setModalType('user'); setIsAddModalOpen(true); }} className="bg-orange-600 hover:bg-orange-500 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold shadow-lg shadow-orange-600/20 hover:scale-105 transition-all text-sm">
+                                                <Plus size={20} /> Novo
+                                            </button>
+                                        )}
+                                    </div>
+                                </header>
+                            )}
+
+
                             {/* DASHBOARD */}
                             {activeTab === 'dashboard' && (
                                 <div className="space-y-6 animate-fade-in">
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                         <StatCard title="Total Clientes" value={clients.length} icon={<UserPlus size={24} />} color="blue" />
+                                        {/* Passo 2: Remove (X) do dashboard */}
+                                        <StatCard title="Ativos" value={stats.active} icon={<CheckCircle size={24} />} color="green" />
                                         <StatCard title="Vencidos" value={stats.expired} icon={<AlertTriangle size={24} />} color="red" />
-                                        <StatCard title="Vence Hoje" value={stats.today} icon={<Calendar size={24} />} color="orange" />
                                         <StatCard title="Minha Equipe" value={team.length} icon={<Shield size={24} />} color="purple" />
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1424,49 +1835,7 @@
                                         </div>
                                     </div>
 
-                                    {/* TABELA DE VENCIMENTOS (RESTAURADA) */}
-                                    <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl mt-6">
-                                        <div className="p-6 border-b border-slate-800 flex items-center gap-2">
-                                            <AlertTriangle size={18} className="text-orange-500"/>
-                                            <h3 className="font-bold text-white">Atenção: Vencidos e Vencendo</h3>
-                                        </div>
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full text-left text-sm text-slate-400">
-                                                <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
-                                                    <tr>
-                                                        <th className="px-6 py-4">Cliente</th>
-                                                        <th className="px-6 py-4">Vencimento</th>
-                                                        <th className="px-6 py-4">Status</th>
-                                                        <th className="px-6 py-4 text-right">Ações</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-800">
-                                                    {clients
-                                                        .filter(c => ['expired', 'today', 'expiring'].includes(getClientStatus(c.dueDate).status))
-                                                        .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
-                                                        .slice(0, 10) // Limit to top 10
-                                                        .map(client => {
-                                                            const { label, color } = getClientStatus(client.dueDate);
-                                                            const waLink = client.whatsapp ? `https://wa.me/55${client.whatsapp.replace(/\D/g,'')}?text=${generateWhatsAppMessage(client, user)}` : null;
-                                                            return (
-                                                                <tr key={client.id} className="hover:bg-slate-800/50 transition-colors">
-                                                                    <td className="px-6 py-4 font-medium text-white">{client.name}</td>
-                                                                    <td className="px-6 py-4 font-mono">{formatDate(client.dueDate)}</td>
-                                                                    <td className="px-6 py-4"><span className={`text-${color}-400 font-bold text-xs bg-${color}-500/10 px-2 py-1 rounded border border-${color}-500/20`}>{label}</span></td>
-                                                                    <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                                                        {waLink && <a href={waLink} target="_blank" className="p-2 hover:bg-slate-700 rounded text-green-500"><MessageCircle size={16}/></a>}
-                                                                        <button onClick={() => handleRenew(client, 'client')} className="p-2 hover:bg-slate-700 rounded text-blue-500"><RefreshCw size={16}/></button>
-                                                                    </td>
-                                                                </tr>
-                                                            )
-                                                        })}
-                                                    {clients.filter(c => ['expired', 'today', 'expiring'].includes(getClientStatus(c.dueDate).status)).length === 0 && (
-                                                        <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-500">Tudo em dia! Nenhuma pendência.</td></tr>
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
+                                    {/* TABELA DE VENCIMENTOS (REMOVIDA DAQUI PELO PASSO 4) */}
                                 </div>
                             )}
 
@@ -1479,7 +1848,7 @@
                                                 <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar cliente..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 text-white outline-none focus:border-orange-500 transition-colors text-sm" />
                                             </div>
                                             <div className="flex gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-hide">
-                                                {[{id:'all',l:'Todos'}, {id:'active',l:'Ativos'}, {id:'expired',l:'Vencidos'}].map(f=>(
+                                                {[{id:'all',l:'Todos'}, {id:'active',l:`Ativos (${stats.active})`}, {id:'expired',l:`Vencidos (${stats.expired})`}].map(f=>(
                                                     <button key={f.id} onClick={()=>setFilterStatus(f.id)} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${filterStatus===f.id?'bg-orange-500 text-white shadow-lg shadow-orange-500/20':'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>{f.l}</button>
                                                 ))}
                                             </div>
@@ -1524,7 +1893,7 @@
                                             <tbody className="divide-y divide-slate-800">
                                                 {filteredClients.map(client => {
                                                     const { label, color } = getClientStatus(client.dueDate);
-                                                    const waLink = client.whatsapp ? `https://wa.me/55${client.whatsapp.replace(/\D/g,'')}?text=${generateWhatsAppMessage(client, user)}` : null;
+                                                    const waLink = client.whatsapp ? `https://wa.me/55${client.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(generateWhatsAppMessage(client, user, 'client'))}` : null;
                                                     const isSelected = selectedClients.includes(client.id);
 
                                                     return (
@@ -1552,8 +1921,16 @@
                                                             <td className="px-6 py-4"><span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-${color}-500/10 text-${color}-400 border border-${color}-500/20`}>{label}</span></td>
                                                             <td className="px-6 py-4 text-right">
                                                                 <div className="flex items-center justify-end gap-2">
+                                                                    {/* Passo 2: Ver Detalhes */}
+                                                                    <ActionButton onClick={() => {setViewingItem(client); setIsViewModalOpen(true);}} color="orange" icon={Eye} title="Ver Detalhes" />
+
+                                                                    {/* Passo 1: Abrir Modal para Enviar/Editar */}
+                                                                    {/* Passo 1: Ajuste de verificação de status do bot */}
+                                                                    {client.whatsapp && botSession?.status === 'connected' && (
+                                                                        <ActionButton onClick={() => handleOpenMessageModal(client, 'client')} color="purple" icon={Send} title="Enviar c/ Bot" />
+                                                                    )}
+
                                                                     {waLink && <a href={waLink} target="_blank" className="p-2 bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white rounded-lg transition-colors border border-green-600/20 hover:border-transparent"><MessageCircle size={18}/></a>}
-                                                                    {botSession?.status === 'connected' && (<ActionButton onClick={()=>sendBotMessage(client)} color="purple" icon={Send} title="Enviar c/ Bot" />)}
                                                                     <ActionButton onClick={()=>handleRenew(client, 'client')} color="blue" icon={RefreshCw} title="Renovar" />
                                                                     <ActionButton onClick={()=>{setEditingItem(client); setFormData(client); setModalType('client'); setIsAddModalOpen(true);}} color="slate" icon={Edit} title="Editar" />
                                                                     <ActionButton onClick={()=>handleDelete(client.id, 'client')} color="red" icon={Trash2} title="Excluir" />
@@ -1572,7 +1949,7 @@
                             {/* TEAM */}
                             {activeTab === 'team' && (
                                 <div className="h-full">
-                                    {/* BLINDAGEM VISUAL PARA REVENDA */}
+                                    {/* BLINDAGEM VISUAL PARA REVENDA (Passo 3) */}
                                     {user.role === 'reseller' ? (
                                         <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] p-8 text-center space-y-8 animate-fade-in">
                                             <div className="relative">
@@ -1611,7 +1988,15 @@
                                             <div className="overflow-auto flex-1">
                                                 <table className="w-full text-left text-sm text-slate-400">
                                                     <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold tracking-wider sticky top-0 shadow-md z-10">
-                                                        <tr><th className="px-6 py-4">Nome</th><th className="px-6 py-4 hidden md:table-cell">Data Criação</th><th className="px-6 py-4 hidden md:table-cell">Status</th><th className="px-6 py-4">Painel</th><th className="px-6 py-4 text-right">Ações</th></tr>
+                                                        <tr>
+                                                            <th className="px-6 py-4">Nome</th>
+                                                            <th className="px-6 py-4 hidden md:table-cell">Data Criação</th>
+                                                            <th className="px-6 py-4 hidden md:table-cell">Cargo</th>
+                                                            <th className="px-6 py-4">Painel</th>
+                                                            <th className="px-6 py-4 hidden md:table-cell">Valor Pago</th> {/* Passo 6: Valor Pago */}
+                                                            <th className="px-6 py-4 hidden md:table-cell">Criado por</th> {/* Passo 6: Criado por */}
+                                                            <th className="px-6 py-4 text-right">Ações</th>
+                                                        </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-800">
                                                         {filteredTeam.map(member => {
@@ -1631,17 +2016,38 @@
                                                                     <td className="px-6 py-4 hidden md:table-cell font-mono">{formatDate(member.createdAt)}</td>
                                                                     <td className="px-6 py-4 hidden md:table-cell"><RoleBadge role={member.role} /></td>
                                                                     <td className="px-6 py-4"><span className={`font-bold text-xs ${isExp ? 'text-red-400' : 'text-green-400'}`}>{isExp ? 'Expirado' : `${daysLeft} dias`}</span></td>
+                                                                    <td className="px-6 py-4 hidden md:table-cell font-mono text-white">{formatCurrency(member.valuePaid)}</td> {/* Passo 6: Valor Pago */}
+                                                                    <td className="px-6 py-4 hidden md:table-cell">
+                                                                        <span className="text-red-400 font-bold text-xs">{member.parentId || 'System'}</span> {/* Passo 6: Criado por em Vermelho */}
+                                                                    </td>
                                                                     <td className="px-6 py-4 text-right">
                                                                         <div className="flex items-center justify-end gap-2">
+                                                                            {/* Passo 9: Ver Detalhes */}
+                                                                            <ActionButton onClick={() => {setViewingItem(member); setIsViewModalOpen(true);}} color="orange" icon={Eye} title="Ver Detalhes" />
+
+                                                                            {/* Passo 6: Cobrar com Bot */}
+                                                                            {/* Passo 1: Ajuste de verificação de status do bot */}
+                                                                            {member.whatsapp && botSession?.status === 'connected' && (
+                                                                                 <ActionButton onClick={() => {
+                                                                                     // Mensagem simples de contato para a Revenda
+                                                                                     handleOpenMessageModal(member, 'team');
+                                                                                 }} color="purple" icon={Send} title="Cobrar c/ Bot" />
+                                                                            )}
+
+                                                                            {/* Passo 6: WhatsApp Direto */}
+                                                                            {member.whatsapp && (
+                                                                                <a href={`https://wa.me/55${member.whatsapp.replace(/\D/g,'')}`} target="_blank" className="p-2 bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white rounded-lg transition-colors border border-green-600/20 hover:border-transparent" title="WhatsApp"><MessageCircle size={18}/></a>
+                                                                            )}
+                                                                            
                                                                             <ActionButton onClick={()=>handleRenew(member, 'user')} color="blue" icon={RefreshCw} title="Renovar" />
                                                                             <ActionButton onClick={()=>{setEditingItem(member); setFormData(member); setNewMemberRole(member.role); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} title="Editar" />
-                                                                            <ActionButton onClick={()=>handleDelete(member.id, 'user')} color="red" icon={Trash2} title="Excluir" />
+                                                                            <ActionButton onClick={()=>handleDelete(member.id, 'user')} color="red" icon={Trash2} title="Excluir (Raiz)" />
                                                                         </div>
                                                                     </td>
                                                                 </tr>
                                                             );
                                                         })}
-                                                        {filteredTeam.length === 0 && <tr><td colSpan="5" className="px-6 py-12 text-center text-slate-600">Nenhum membro encontrado.</td></tr>}
+                                                        {filteredTeam.length === 0 && <tr><td colSpan="7" className="px-6 py-12 text-center text-slate-600">Nenhum membro encontrado.</td></tr>}
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -1667,8 +2073,10 @@
                                     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
                                         <h3 className="font-bold text-white mb-2 flex items-center gap-2"><Key size={18} className="text-yellow-500"/> Configuração da API (Gemini)</h3>
                                         <div className="flex items-center gap-4">
-                                            <input type="text" value={userApiKey} onChange={(e) => setUserApiKey(e.target.value)} placeholder="Cole sua Chave de API Gemini aqui..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:border-purple-500 transition-colors" />
-                                            <button onClick={handleSaveMessageConfig} className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl transition-colors">Salvar</button>
+                                            <input type="text" value={userApiKey} onChange={(e) => setUserApiKey(e.target.value)} placeholder="Cole sua Chave de API Gemini aqui..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none focus:border-purple-500 transition-colors" />
+                                            <button onClick={handleSaveMessageConfig} disabled={isProcessing} className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+                                                {isProcessing ? <LoadingSpinner size={16} /> : 'Salvar'}
+                                            </button>
                                         </div>
                                         <p className="text-xs text-slate-500 mt-2">A chave fica salva no seu navegador.</p>
                                     </div>
@@ -1677,17 +2085,17 @@
                                     <div className="grid md:grid-cols-3 gap-4 mb-6">
                                         <button onClick={()=>setAiView('support')} className={`p-6 rounded-2xl text-left transition-all ${aiView === 'support' ? 'bg-slate-800 border-purple-500' : 'bg-slate-900 border-slate-800 hover:bg-slate-800/50'} border-2`}>
                                             <MessageSquare size={24} className="text-purple-400 mb-3"/>
-                                            <h3 className="font-bold text-white text-lg">Suporte Rápido</h3>
+                                            <h3 className="font-bold text-lg text-white mb-1">Suporte Rápido</h3>
                                             <p className="text-sm text-slate-400">Gere respostas para clientes com problemas comuns.</p>
                                         </button>
                                         <button onClick={()=>setAiView('marketing')} className={`p-6 rounded-2xl text-left transition-all ${aiView === 'marketing' ? 'bg-slate-800 border-orange-500' : 'bg-slate-900 border-slate-800 hover:bg-slate-800/50'} border-2`}>
                                             <Megaphone size={24} className="text-orange-400 mb-3"/>
-                                            <h3 className="font-bold text-white text-lg">Marketing Digital</h3>
+                                            <h3 className="font-bold text-lg text-white mb-1">Marketing Digital</h3>
                                             <p className="text-sm text-slate-400">Crie textos de venda para eventos e promoções.</p>
                                         </button>
                                         <button onClick={()=>setAiView('consultant')} className={`p-6 rounded-2xl text-left transition-all ${aiView === 'consultant' ? 'bg-slate-800 border-blue-500' : 'bg-slate-900 border-slate-800 hover:bg-slate-800/50'} border-2`}>
                                             <BrainCircuit size={24} className="text-blue-400 mb-3"/>
-                                            <h3 className="font-bold text-white text-lg">Consultor Virtual</h3>
+                                            <h3 className="font-bold text-lg text-white mb-1">Consultor Virtual</h3>
                                             <p className="text-sm text-slate-400">Receba dicas para melhorar seus resultados.</p>
                                         </button>
                                     </div>
@@ -1706,7 +2114,8 @@
                                                 ) : (
                                                     <div className="text-center text-slate-500 h-full flex flex-col justify-center items-center">
                                                         <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4"><BrainCircuit size={32}/></div>
-                                                        <p className="font-bold">Como posso te ajudar hoje?</p>
+                                                        {/* Passo 10: Limpar Barra de Digitação */}
+                                                        <p className="font-bold">Como posso te ajudar hoje?</p> 
                                                         <p className="text-sm">Selecione uma opção e descreva sua necessidade.</p>
                                                     </div>
                                                 )}
@@ -1723,7 +2132,7 @@
                                                         <select value={aiEvent} onChange={(e) => setAiEvent(e.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 outline-none focus:border-purple-500 transition-colors appearance-none">
                                                             <option>Futebol (Brasileirão)</option><option>Futebol (Libertadores)</option><option>UFC / Luta</option><option>Filmes & Séries</option>
                                                         </select>
-                                                        <button onClick={() => handleAiAction('marketing')} disabled={aiLoading} className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl font-bold transition-colors disabled:opacity-50 flex items-center gap-2">{aiLoading ? <LoadingSpinner /> : <><Sparkles size={18}/> Gerar</>}</button>
+                                                        <button onClick={() => handleAiAction('marketing')} disabled={aiLoading} className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl font-bold transition-colors disabled:opacity-50 flex items-center gap-2">{aiLoading ? <><LoadingSpinner /> Gerar</> : <><Sparkles size={18}/> Gerar</>}</button>
                                                     </div>
                                                 )}
                                                 {aiView === 'consultant' && <button onClick={() => handleAiAction('consultant')} disabled={aiLoading} className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:opacity-90 text-white p-4 rounded-xl font-bold text-lg transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">{aiLoading ? <><LoadingSpinner /> Analisando...</> : <><BarChart3 size={20}/> Analisar Meu Negócio</>}</button>}
@@ -1768,9 +2177,14 @@
                                             <div className="space-y-6">
                                                 <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-sm text-slate-400 flex justify-between items-center">
                                                     <p>Conecte <strong>seu WhatsApp</strong> para envio automático. (Sessão Privada).</p>
-                                                    {botConnectionStatus === 'connecting' && <span className="text-yellow-500 text-xs animate-pulse">Sincronizando...</span>}
-                                                    {botConnectionStatus === 'connected' && <span className="text-green-500 text-xs">● Sincronizado</span>}
-                                                    {botConnectionStatus === 'disconnected' && <span className="text-red-500 text-xs">● Desconectado</span>}
+                                                    {/* Passo 1: Verifica o status do botSession */}
+                                                    {botSession?.status === 'connecting' && <span className="text-yellow-500 text-xs animate-pulse">Sincronizando...</span>}
+                                                    {botSession?.status === 'connected' && <span className="text-green-500 text-xs">● Sincronizado</span>}
+                                                    {botSession?.status === 'qrcode' && <span className="text-orange-500 text-xs">● Aguardando QR</span>}
+                                                    {botSession?.status === 'timeout' && <span className="text-red-500 text-xs">● Tempo Esgotado</span>}
+                                                    {botSession?.status === 'error' && <span className="text-red-500 text-xs">● Erro</span>}
+                                                    {/* Fallback caso não haja sessão ou esteja desconectado */}
+                                                    {(!botSession || botSession.status === 'disconnected') && <span className="text-red-500 text-xs">● Desconectado</span>}
                                                     {botConnectionStatus === 'reconnecting' && <span className="text-yellow-500 text-xs animate-pulse">Reconectando...</span>}
                                                 </div>
                                                 
@@ -1825,11 +2239,7 @@
                                                     <button onClick={checkServerStatus} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded border border-slate-700 flex items-center gap-1"><Terminal size={12}/> Testar Servidor</button>
                                                 </div>
                                                 <div className="bg-black/50 p-3 rounded-lg h-32 overflow-y-auto font-mono text-[10px] text-slate-300 border border-slate-800/50">
-                                                    {debugLogs.length === 0 ? (
-                                                        <span className="text-slate-600 italic">Nenhum evento registrado.</span>
-                                                    ) : (
-                                                        debugLogs.map((log, i) => <div key={i} className="border-b border-slate-800/30 pb-1 mb-1 last:border-0">{log}</div>)
-                                                    )}
+                                                    {debugLogs.map((log, i) => <div key={i} className="border-b border-slate-800/30 pb-1 mb-1 last:border-0">{log}</div>)}
                                                 </div>
                                             </div>
                                         </div>
@@ -1841,34 +2251,107 @@
                                                 <button onClick={()=>setSettingsView('menu')} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"><ArrowLeft size={20}/></button>
                                                 <h2 className="text-xl md:text-2xl font-bold flex items-center gap-3 text-white"><MessageCircle size={24} className="text-blue-500" /> Mensagem Personalizada</h2>
                                             </div>
-                                            
-                                            {/* GABARITO DE CÓDIGOS (CHEAT SHEET) */}
-                                            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 mb-6">
-                                                <div className="flex items-center gap-2 mb-3 text-slate-400 text-xs font-bold uppercase tracking-wider">
-                                                    <FileCode size={14}/> Gabarito de Códigos (Variáveis)
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-3 text-xs">
-                                                    <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{nome}`}</span> Nome Cliente</div>
-                                                    <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{valor}`}</span> Valor (R$)</div>
-                                                    <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{vencimento}`}</span> Data Venc.</div>
-                                                    <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{empresa}`}</span> Sua Empresa</div>
-                                                </div>
-                                            </div>
 
-                                            <form onSubmit={handleSaveMessageConfig} className="space-y-6">
-                                                <div><label className="block text-xs font-bold uppercase text-slate-400 mb-2">Nome Empresa</label><input type="text" value={msgCompany} onChange={(e) => setMsgCompany(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:border-blue-500 outline-none transition-colors" placeholder="Ex: Top TV"/></div>
-                                                <div className="space-y-4">
-                                                    <p className="text-sm font-bold text-white">Modelos de Mensagem</p>
-                                                    {[{id: 'expired', label: 'Vencido'},{id: 'today', label: 'Vence Hoje'},{id: 'expiring', label: 'Pré-Vencimento'}].map(template => (
-                                                        <div key={template.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                                                            <label className="block text-xs font-bold text-slate-300 mb-2">{template.label}</label>
-                                                            <textarea rows="2" value={msgTemplates[template.id] || ""} onChange={(e) => setMsgTemplates({...msgTemplates, [template.id]: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-blue-500 outline-none transition-colors resize-none"/>
+                                            {/* NOVO: SELEÇÃO DE ABAS */}
+                                            <div className="flex space-x-2 mb-6 border-b border-slate-800">
+                                                <button 
+                                                    onClick={() => setMessageTarget('client')} 
+                                                    className={`py-2 px-4 text-sm font-bold transition-all border-b-2 ${messageTarget === 'client' ? 'text-white border-orange-500' : 'text-slate-500 border-transparent hover:text-slate-300'}`}
+                                                >
+                                                    Templates Cliente
+                                                </button>
+                                                <button 
+                                                    onClick={() => setMessageTarget('team')} 
+                                                    className={`py-2 px-4 text-sm font-bold transition-all border-b-2 ${messageTarget === 'team' ? 'text-white border-purple-500' : 'text-slate-500 border-transparent hover:text-slate-300'}`}
+                                                >
+                                                    Templates Equipe (Revendas)
+                                                </button>
+                                            </div>
+                                            
+                                            {/* ABA: CLIENTES (Liberado para todos) */}
+                                            {messageTarget === 'client' && (
+                                                <form onSubmit={handleSaveMessageConfig} className="space-y-6">
+                                                    {/* GABARITO DE CÓDIGOS */}
+                                                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                                                        <div className="flex items-center gap-2 mb-3 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                                                            <FileCode size={14}/> Gabarito de Códigos (Cliente)
                                                         </div>
-                                                    ))}
-                                                </div>
-                                                
-                                                <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"><Save size={18} /> Salvar Configurações</button>
-                                            </form>
+                                                        <div className="grid grid-cols-2 gap-3 text-xs">
+                                                            <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{nome}`}</span> Nome Cliente</div>
+                                                            <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{valor}`}</span> Valor (R$)</div>
+                                                            <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{vencimento}`}</span> Data Venc.</div>
+                                                            <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-blue-400 font-bold">{`{empresa}`}</span> Sua Empresa</div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div><label className="block text-xs font-bold uppercase text-slate-400 mb-2">Nome Empresa</label><input type="text" value={msgCompany} onChange={(e) => setMsgCompany(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:border-blue-500 outline-none transition-colors" placeholder="Ex: Top TV"/></div>
+                                                    <div className="space-y-4">
+                                                        <p className="text-sm font-bold text-white">Modelos de Mensagem (Cliente)</p>
+                                                        {[{id: 'expired', label: 'Vencido'},{id: 'today', label: 'Vence Hoje'},{id: 'expiring', label: 'Pré-Vencimento'}].map(template => (
+                                                            <div key={template.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                                                                <label className="block text-xs font-bold text-slate-300 mb-2">{template.label}</label>
+                                                                <textarea 
+                                                                    rows="2" 
+                                                                    value={msgTemplates.client?.[template.id] || ""} 
+                                                                    onChange={(e) => setMsgTemplates({...msgTemplates, client: {...msgTemplates.client, [template.id]: e.target.value}})} 
+                                                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-blue-500 outline-none transition-colors resize-none"
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    
+                                                    <button type="submit" disabled={isProcessing} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 disabled:opacity-50">
+                                                        {isProcessing ? <LoadingSpinner size={16} /> : <Save size={18} />} Salvar Configurações
+                                                    </button>
+                                                </form>
+                                            )}
+
+                                            {/* ABA: EQUIPE (Restrito a Master/CEO) */}
+                                            {messageTarget === 'team' && (
+                                                user.role !== 'ceo' && user.role !== 'master' ? (
+                                                    <div className="flex flex-col items-center justify-center p-8 text-center space-y-4 bg-purple-900/10 border border-purple-500/50 rounded-2xl shadow-xl">
+                                                        <Crown size={48} className="text-purple-500" />
+                                                        <h3 className="text-2xl font-bold text-white">RECURSO MASTER</h3>
+                                                        <p className="text-slate-300">A personalização de mensagens para **Revendas** é exclusiva para usuários Master e CEO.</p>
+                                                        <button onClick={() => window.open('https://wa.me/5511999999999', '_blank')} className="bg-orange-600 hover:bg-orange-500 text-white font-bold px-6 py-3 rounded-xl transition-all flex items-center gap-2">
+                                                            <Zap size={20}/> Falar com Suporte
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <form onSubmit={handleSaveMessageConfig} className="space-y-6">
+                                                         {/* GABARITO DE CÓDIGOS EQUIPE */}
+                                                         <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                                                            <div className="flex items-center gap-2 mb-3 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                                                                <FileCode size={14}/> Gabarito de Códigos (Equipe)
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-3 text-xs">
+                                                                <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-purple-400 font-bold">{`{nome_revenda}`}</span> Nome da Revenda</div>
+                                                                <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-purple-400 font-bold">{`{master}`}</span> Seu Nome (Master)</div>
+                                                                <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-purple-400 font-bold">{`{valor_pago}`}</span> Valor Pago por ela</div>
+                                                                <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-slate-300 font-mono flex items-center gap-2"><span className="text-purple-400 font-bold">{`{whatsapp_revenda}`}</span> WhatsApp da Revenda</div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="space-y-4">
+                                                            <p className="text-sm font-bold text-white">Modelo de Mensagem (Contato com Revenda)</p>
+                                                            {[{id: 'team_contact', label: 'Contato Manual/Cobrança'}].map(template => (
+                                                                <div key={template.id} className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                                                                    <label className="block text-xs font-bold text-slate-300 mb-2">{template.label}</label>
+                                                                    <textarea 
+                                                                        rows="4" 
+                                                                        value={msgTemplates.team?.[template.id] || ""} 
+                                                                        onChange={(e) => setMsgTemplates({...msgTemplates, team: {...msgTemplates.team, [template.id]: e.target.value}})} 
+                                                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white focus:border-purple-500 outline-none transition-colors resize-none"
+                                                                    />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <button type="submit" disabled={isProcessing} className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2 disabled:opacity-50">
+                                                            {isProcessing ? <LoadingSpinner size={16} /> : <Save size={18} />} Salvar Configurações
+                                                        </button>
+                                                    </form>
+                                                )
+                                            )}
                                         </div>
                                     )}
 
@@ -1878,16 +2361,27 @@
                                                 <button onClick={()=>setSettingsView('menu')} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"><ArrowLeft size={20}/></button>
                                                 <h2 className="text-xl md:text-2xl font-bold flex items-center gap-3 text-white"><Lock size={24} className="text-indigo-500" /> Segurança</h2>
                                             </div>
+                                            {/* Passo 12: Campos de Segurança mais claros */}
                                             <form onSubmit={handleUpdateProfile} className="space-y-6" autoComplete="off">
                                                 <input type="text" style={{display:'none'}} />
                                                 <input type="password" style={{display:'none'}} />
-                                                <div><label className="block text-xs font-bold uppercase text-slate-400 mb-2">Novo E-mail</label><input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:border-indigo-500 outline-none transition-colors" placeholder={user.email}/></div>
+                                                
+                                                {/* Email Antigo/Novo */}
+                                                <div><label className="block text-xs font-bold uppercase text-slate-400 mb-2">E-mail Atual</label><input type="email" value={user.email} disabled className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white disabled:opacity-50"/></div>
+                                                <div><label className="block text-xs font-bold uppercase text-slate-400 mb-2">Novo E-mail</label><input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:border-indigo-500 outline-none transition-colors" placeholder="seu_novo@email.com"/></div>
+                                                
+                                                {/* Senha Nova */}
                                                 <div><label className="block text-xs font-bold uppercase text-slate-400 mb-2">Nova Senha</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:border-indigo-500 outline-none transition-colors" placeholder="******" minLength={6}/></div>
+                                                
+                                                {/* Senha Antiga (Obrigatório para reautenticar) */}
                                                 <div className="pt-4 border-t border-slate-800">
                                                     <label className="block text-xs font-bold uppercase text-red-400 mb-2">Senha Atual (Obrigatório)</label>
                                                     <input type="password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full bg-slate-950 border border-red-900/50 rounded-xl py-3 px-4 text-white focus:border-red-500 outline-none transition-colors" placeholder="Confirme sua senha atual"/>
                                                 </div>
-                                                <button type="submit" disabled={isProcessing} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2">{isProcessing ? <LoadingSpinner /> : <Save size={18} />} Atualizar Conta</button>
+
+                                                <button type="submit" disabled={isProcessing} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-50">
+                                                    {isProcessing ? <LoadingSpinner /> : <Save size={18} />} Atualizar Conta
+                                                </button>
                                             </form>
                                         </div>
                                     )}
@@ -1905,26 +2399,45 @@
                                         {modalType === 'client' ? (
                                             <>
                                                 <div><label className="text-xs font-bold text-slate-500 ml-1">NOME</label><input required value={formData.name||''} onChange={e=>setFormData({...formData,name:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white"/></div>
-                                                <div><label className="text-xs font-bold text-slate-500 ml-1">WHATSAPP</label><input value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value.replace(/\D/g,'')})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white" placeholder="11999999999"/></div>
+                                                <div><label className="text-xs font-bold text-slate-500 ml-1">WHATSAPP</label><input value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white" placeholder="11999999999"/></div>
                                                 <div className="grid grid-cols-2 gap-4">
                                                     <div><label className="text-xs font-bold text-slate-500 ml-1">VENCIMENTO</label><input type="date" required value={formData.dueDate||''} onChange={e=>setFormData({...formData,dueDate:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white"/></div>
                                                     <div><label className="text-xs font-bold text-emerald-500 ml-1">VALOR (R$)</label><input type="number" step="0.01" value={formData.value||''} onChange={e=>setFormData({...formData,value:e.target.value})} className="w-full bg-slate-950 border border-emerald-500/50 rounded-lg p-3 outline-none focus:border-emerald-500 text-white"/></div>
                                                 </div>
                                                 <div><label className="text-xs font-bold text-slate-500 ml-1">LOGIN IPTV</label><input value={formData.username||''} onChange={e=>setFormData({...formData,username:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white"/></div>
+                                                {/* Passo 3: Novo: Observação Cliente */}
+                                                <div><label className="text-xs font-bold text-slate-500 ml-1">OBSERVAÇÃO</label><textarea rows="3" value={formData.observation||''} onChange={e=>setFormData({...formData,observation:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white resize-none"/></div>
                                             </>
                                         ) : (
                                             <>
                                                 <div><label className="text-xs font-bold text-slate-500 ml-1">NOME</label><input required value={formData.name||''} onChange={e=>setFormData({...formData,name:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white"/></div>
                                                 <div><label className="text-xs font-bold text-slate-500 ml-1">E-MAIL</label><input required type="email" value={formData.email||''} disabled={!!editingItem} onChange={e=>setFormData({...formData,email:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white disabled:opacity-50"/></div>
+                                                {/* Passo 6: Novo: WhatsApp Equipe */}
+                                                <div><label className="text-xs font-bold text-slate-500 ml-1">WHATSAPP</label><input value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white" placeholder="11999999999"/></div>
+                                                {/* Passo 6: Novo: Valor Pago Equipe */}
+                                                <div><label className="text-xs font-bold text-emerald-500 ml-1">VALOR PAGO (R$)</label><input type="number" step="0.01" value={formData.valuePaid||''} onChange={e=>setFormData({...formData,valuePaid:e.target.value})} className="w-full bg-slate-950 border border-emerald-500/50 rounded-lg p-3 outline-none focus:border-emerald-500 text-white"/></div>
+                                                {/* Passo 6: Novo: Observação Equipe */}
+                                                <div><label className="text-xs font-bold text-slate-500 ml-1">OBSERVAÇÃO</label><textarea rows="3" value={formData.observation||''} onChange={e=>setFormData({...formData,observation:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none focus:border-orange-500 text-white resize-none"/></div>
+
                                                 {user.role === 'ceo' && (
-                                                    <div className="flex gap-2">
-                                                        <button type="button" onClick={() => setNewMemberRole('master')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'master' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Master</button>
-                                                        <button type="button" onClick={() => setNewMemberRole('reseller')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'reseller' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Revenda</button>
+                                                    <div className="space-y-4">
+                                                        <div className="flex gap-2">
+                                                            <button type="button" onClick={() => setNewMemberRole('master')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'master' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Master</button>
+                                                            <button type="button" onClick={() => setNewMemberRole('reseller')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'reseller' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Revenda</button>
+                                                        </div>
+                                                        {/* Passo 7: Botão de Ajuste de Dias */}
+                                                        {editingItem && (
+                                                            <button type="button" onClick={() => setIsPanelExpModalOpen(true)} className="w-full bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 font-bold py-2 rounded-xl transition-all flex justify-center items-center gap-2 border border-blue-600/20">
+                                                                <Clock size={16}/> Reduzir/Aumentar Dias (Painel)
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 )}
                                             </>
                                         )}
-                                        <button type="submit" className="w-full bg-orange-600 hover:bg-orange-500 py-3.5 rounded-xl font-bold text-white shadow-lg shadow-orange-600/20 transition-all mt-4 flex justify-center items-center gap-2">{isProcessing ? <LoadingSpinner /> : 'Salvar Registro'}</button>
+                                        <button type="submit" disabled={isProcessing} className="w-full bg-orange-600 hover:bg-orange-500 py-3.5 rounded-xl font-bold text-white shadow-lg shadow-orange-600/20 transition-all mt-4 flex justify-center items-center gap-2 disabled:opacity-50">
+                                            {isProcessing ? <LoadingSpinner /> : 'Salvar Registro'}
+                                        </button>
                                     </form>
                                 </div>
                             </div>
