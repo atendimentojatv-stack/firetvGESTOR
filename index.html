@@ -164,7 +164,7 @@
                 const num = parseFloat(val) || 0;
                 return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
             } catch (e) { return 'R$ 0,00'; }
-        };
+            };
 
         const getDaysLeft = (expirationDate) => {
             try {
@@ -358,7 +358,9 @@
             </div>
         );
 
-        const ImportExportModal = ({ isOpen, onClose, clients, user }) => {
+        // MODAL DE IMPORTAÇÃO/EXPORTAÇÃO
+        // ADICIONADO showToast e isProcessing como props para substituir o alert() que causava o crash.
+        const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProcessing }) => {
             if (!isOpen) return null;
 
             const [step, setStep] = useState(1);
@@ -375,7 +377,8 @@
                 reader.onload = (event) => {
                     const text = event.target.result;
                     const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== '');
-                    if (lines.length < 2) return alert("CSV inválido ou vazio.");
+                    // CORREÇÃO: Substituído alert() por showToast() para evitar o crash/tela preta
+                    if (lines.length < 2) return showToast("CSV inválido ou vazio.", 'error'); 
 
                     // DETECÇÃO AUTOMÁTICA DE SEPARADOR (Vírgula ou Ponto e Vírgula)
                     const firstLine = lines[0];
@@ -421,8 +424,9 @@
             };
 
             const processImport = async () => {
+                // CORREÇÃO: Substituído alert() por showToast()
                 if (!mapping.name || !mapping.dueDate) {
-                    return alert("Mapeie pelo menos 'Nome' e 'Vencimento'.");
+                    return showToast("Mapeie pelo menos 'Nome' e 'Vencimento'.", 'error');
                 }
                 setStep(3);
                 const batch = writeBatch(db);
@@ -453,7 +457,8 @@
                     setImportProgress((count / csvData.length) * 100);
                 }
                 await batch.commit();
-                alert(`${count} clientes importados com sucesso!`);
+                // CORREÇÃO: Substituído alert() por showToast()
+                showToast(`${count} clientes importados com sucesso!`, 'success');
                 onClose();
             };
 
@@ -714,7 +719,7 @@
             const [aiResponse, setAiResponse] = useState('');
             const [aiLoading, setAiLoading] = useState(false);
             const [aiEvent, setAiEvent] = useState('Futebol');
-            const [userApiKey, setUserApiKey] = useState(localStorage.getItem('firetv_ai_key') || '');
+            const [userApiKey, setUserApiKey] = localStorage.getItem('firetv_ai_key') || '';
 
             // Config & Security
             const [msgCompany, setMsgCompany] = useState("Fire Gestor");
@@ -885,6 +890,54 @@
             }, [user, view]);
 
             // --- BOT WHATSAPP ---
+            
+            // NOVO: Função para checar o status de saúde do bot no servidor
+            const checkBotHealth = useCallback(async () => {
+                if (!user?.id || botConnectionStatus === 'connecting') return;
+                try {
+                    // Endpoint para obter o status da sessão, diferente do SSE
+                    const response = await fetch(`${botApiUrl}/sessions/status/${user.id}`, { 
+                        method: 'GET', 
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    
+                    if (!response.ok) {
+                        // Se o servidor retornar 404/400 (Sessão não encontrada), consideramos desconectado
+                        if (response.status === 404) {
+                            setBotSession(prev => ({ ...prev, status: 'disconnected', qrCode: null }));
+                            // addLog("Sessão não encontrada no servidor. Status ajustado para desconectado.");
+                            return;
+                        }
+                        throw new Error(`Erro ${response.status} ao checar health.`);
+                    }
+
+                    const data = await response.json();
+                    
+                    // Se o status retornado for 'disconnected', 'timeout' ou 'error', atualiza o estado
+                    if (['disconnected', 'timeout', 'error'].includes(data.status)) {
+                        if (botSession?.status !== data.status) {
+                            setBotSession(data);
+                            addLog(`Status Bot forçado: ${data.status.toUpperCase()}`);
+                        }
+                    } else if (data.status === 'connected') {
+                        // Se estiver conectado, garante que o estado local esteja correto
+                        setBotSession(data);
+                    }
+                    
+                } catch (e) { 
+                    // Se o erro for de rede (servidor offline), ajusta para desconectado
+                    if (e.message.includes('Failed to fetch')) {
+                         if (botConnectionStatus === 'connected' || botConnectionStatus === 'connecting') {
+                            setBotConnectionStatus('disconnected');
+                            addLog("ERRO DE REDE: Servidor Bot inalcançável.");
+                        }
+                    } else {
+                        // console.error("Erro no Health Check:", e.message);
+                    }
+                }
+            }, [user, botApiUrl, botSession, botConnectionStatus]);
+
+
             const connectBot = async () => {
                 setIsBotLoading(true);
                 addLog("Iniciando requisição para conectar bot...");
@@ -910,6 +963,7 @@
                 finally { setIsBotLoading(false); }
             };
 
+            // ALTERADO: Adicionado checagem de status agressiva após o comando de parada
             const disconnectBot = async () => {
                 setIsBotLoading(true);
                 addLog("Solicitando desconexão...");
@@ -921,6 +975,10 @@
                     });
                     showToast("Bot desconectado.", 'success');
                     addLog("Bot desconectado com sucesso.");
+                    // Força atualização de estado local e tenta verificar o status real
+                    setBotSession(prev => ({ ...prev, status: 'disconnected', qrCode: null })); 
+                    setTimeout(checkBotHealth, 100); // Check 1: Quase imediato
+                    setTimeout(checkBotHealth, 3000); // Check 2: Após 3 segundos
                 } catch (e) { 
                     showToast(`Sua solicitação falhou ao desconectar: ${e.message}`, 'error');
                     addLog(`Erro ao desconectar: ${e.message}`); 
@@ -928,6 +986,7 @@
                 finally { setIsBotLoading(false); }
             };
             
+            // ALTERADO: Adicionado checagem de status agressiva após o comando de parada
             const forceDisconnectBot = async () => {
                 setIsBotLoading(true);
                 addLog("Forçando reset do bot...");
@@ -939,6 +998,10 @@
                     });
                     showToast("Bot resetado com força.", 'success');
                     addLog("Bot resetado.");
+                     // Força atualização de estado local e tenta verificar o status real
+                    setBotSession(prev => ({ ...prev, status: 'disconnected', qrCode: null })); 
+                    setTimeout(checkBotHealth, 100); // Check 1: Quase imediato
+                    setTimeout(checkBotHealth, 3000); // Check 2: Após 3 segundos
                 } catch (e) { 
                     showToast(`Sua solicitação falhou ao forçar reset: ${e.message}`, 'error'); 
                     addLog(`Erro ao resetar: ${e.message}`);
@@ -989,6 +1052,25 @@
                 }
             };
 
+            // NOVO: Função para forçar o fechamento da conexão SSE e re-startar
+            const handleForceClientRefresh = () => {
+                addLog("Forçando re-renderização e reinício da conexão SSE...");
+                setRetryCount(prev => prev + 1); 
+                showToast("Atualização de Status forçada. A conexão SSE será reiniciada.", 'info');
+            };
+            
+            // NOVO: useEffect para Health Check periódico
+            useEffect(() => {
+                if (!user?.id) return;
+                
+                // Roda o health check imediatamente e depois a cada 20 segundos
+                checkBotHealth();
+                const interval = setInterval(checkBotHealth, 20000); 
+                
+                return () => clearInterval(interval);
+            }, [user, checkBotHealth]);
+
+
             useEffect(() => {
                 if (!user?.id) return;
                 let eventSource;
@@ -1017,6 +1099,10 @@
                             // Não logar tudo para não poluir, só mudanças importantes
                             if(data.status === 'qrcode') addLog("QR Code recebido.");
                             if(data.status === 'connected') { addLog("Sessão WhatsApp conectada!"); showToast("Bot WhatsApp Conectado!", 'success'); }
+                            // Adiciona mais logs para estados que indicam desconexão/erro
+                            if(data.status === 'disconnected') { addLog("Sessão WhatsApp desconectada."); }
+                            if(data.status === 'timeout') { addLog("Sessão Bot expirou (timeout)."); }
+                            if(data.status === 'error') { addLog("Erro na sessão do Bot."); }
                         } catch (e) { console.error("Erro JSON SSE", e); }
                     };
 
@@ -1543,7 +1629,7 @@
                 }, [notification]);
 
                 if (!notification.show) return null;
-                const colors = { success: 'bg-green-500', error: 'bg-red-500' };
+                const colors = { success: 'bg-green-500', error: 'bg-red-500', info: 'bg-blue-500' };
                 // Aumentado o z-index para garantir que fique sempre no topo
                 return <div className={`fixed bottom-24 md:bottom-5 right-5 ${colors[notification.type]} text-white px-5 py-3 rounded-xl shadow-2xl animate-slide-in z-[999]`}>{notification.message}</div>;
             };
@@ -1713,7 +1799,15 @@
                     {showRegistrationSuccess && <RegistrationSuccess />}
                     <ConfirmDialog />
                     <Notification />
-                    <ImportExportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} clients={clients} user={user} />
+                    {/* CORREÇÃO: Passando a função showToast e o estado isProcessing para o modal */}
+                    <ImportExportModal 
+                        isOpen={isImportModalOpen} 
+                        onClose={() => setIsImportModalOpen(false)} 
+                        clients={clients} 
+                        user={user} 
+                        showToast={showToast} 
+                        isProcessing={isProcessing} 
+                    />
                     {isMessageModalOpen && <MessageModal />} {/* NOVO: Modal de Edição/Envio de Mensagem */}
                     {isViewModalOpen && <ViewModal />}       {/* NOVO: Modal de Visualização */}
                     {isPanelExpModalOpen && <PanelExpModal />} {/* NOVO: Modal de Ajuste de Dias */}
@@ -2236,7 +2330,10 @@
                                             <div className="mt-8 border-t border-slate-800 pt-4">
                                                 <div className="flex justify-between items-center mb-2">
                                                     <h3 className="text-sm font-bold text-slate-400 flex items-center gap-2"><Activity size={14}/> Logs de Diagnóstico</h3>
-                                                    <button onClick={checkServerStatus} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded border border-slate-700 flex items-center gap-1"><Terminal size={12}/> Testar Servidor</button>
+                                                    <div className="flex gap-2">
+                                                        <button onClick={handleForceClientRefresh} className="text-xs bg-purple-600/10 hover:bg-purple-600/20 text-purple-400 px-3 py-1 rounded border border-purple-600/20 flex items-center gap-1"><RefreshCw size={12}/> Reforçar Cliente</button>
+                                                        <button onClick={checkServerStatus} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded border border-slate-700 flex items-center gap-1"><Terminal size={12}/> Testar Servidor</button>
+                                                    </div>
                                                 </div>
                                                 <div className="bg-black/50 p-3 rounded-lg h-32 overflow-y-auto font-mono text-[10px] text-slate-300 border border-slate-800/50">
                                                     {debugLogs.map((log, i) => <div key={i} className="border-b border-slate-800/30 pb-1 mb-1 last:border-0">{log}</div>)}
