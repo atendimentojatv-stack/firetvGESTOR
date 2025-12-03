@@ -72,6 +72,14 @@
         .prose-invert ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 1em; color: #cbd5e1; }
         .prose-invert strong { color: #f97316; font-weight: 700; }
         .prose-invert p { margin-bottom: 0.8em; line-height: 1.6; }
+
+        /* Fundo de Grade */
+        .bg-grid-slate-800\/10 {
+            background-image: linear-gradient(to right, #1e293b 1px, transparent 1px),
+                              linear-gradient(to bottom, #1e293b 1px, transparent 1px);
+            background-size: 40px 40px;
+            opacity: 0.1;
+        }
     </style>
 </head>
 <body class="text-white antialiased">
@@ -123,7 +131,8 @@
         } from 'lucide-react';
 
         // --- CONFIGURAÇÕES ---
-        const defaultApiKey = ""; 
+        // 1. Chave de API Padrão (Usada por Master e Revenda)
+        const defaultApiKey = "AIzaSyCmbxg1nkPP2L_JRSsNN9uesaybciKQV70"; 
         
         // --- CONFIGURAÇÃO DO SERVIDOR VPS (KINGHOST) ---
         // ALTERE AQUI SE O IP MUDAR
@@ -357,6 +366,117 @@
                 <p className="text-white font-medium break-all">{value}</p>
             </div>
         );
+
+        // NOVO: Feature Card para Landing Page
+        const FeatureCard = ({ icon: Icon, title, description, color }) => (
+            <div className={`bg-slate-900 border border-slate-800 p-6 rounded-2xl transition-all hover:shadow-xl hover:shadow-${color}-900/10 hover:border-${color}-500/50`}>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 bg-${color}-500/10 text-${color}-500`}>
+                    <Icon size={24} />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
+                <p className="text-slate-400 text-sm">{description}</p>
+            </div>
+        );
+
+        // NOVO: Seção de Recursos (O que o Gestor tem)
+        const FeaturesSection = () => (
+            <section className="py-16 md:py-24 bg-slate-950 relative z-10">
+                <div className="max-w-7xl mx-auto px-4">
+                    <h2 className="text-3xl md:text-4xl font-black text-white text-center mb-4">O que o Fire Gestor <span className="text-orange-500">Tem?</span></h2>
+                    <p className="text-lg text-slate-400 text-center max-w-3xl mx-auto mb-12">Automação completa para você escalar seu negócio IPTV, desde o contato inicial até a gestão da sua equipe.</p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <FeatureCard 
+                            icon={Send} 
+                            title="Bot WhatsApp Cobrança" 
+                            description="Envie mensagens de cobrança e renovação automáticas ou manuais, personalizando templates para cada status do cliente."
+                            color="purple"
+                        />
+                        <FeatureCard 
+                            icon={UserPlus} 
+                            title="Gestão Inteligente de Clientes" 
+                            description="Controle vencimentos, valores, status (Ativo/Vencido), e utilize filtros de busca avançada. Importe e exporte dados com facilidade."
+                            color="orange"
+                        />
+                        <FeatureCard 
+                            icon={Shield} 
+                            title="Gerenciamento de Equipe" 
+                            description="Crie contas Master e Revenda, controle a expiração do painel de cada membro e gerencie o fluxo de trabalho da sua equipe."
+                            color="blue"
+                        />
+                        <FeatureCard 
+                            icon={Sparkles} 
+                            title="Assistente de IA Integrado" 
+                            description="Gere textos de marketing, obtenha soluções de suporte técnico e consulte estratégias de crescimento, tudo dentro do sistema."
+                            color="green"
+                        />
+                        <FeatureCard 
+                            icon={Wallet} 
+                            title="Visão Financeira" 
+                            description="Acompanhe a receita mensal ativa e identifique a receita perdida devido a clientes inativos ou vencidos."
+                            color="red"
+                        />
+                        <FeatureCard 
+                            icon={Lock} 
+                            title="Segurança e Controle" 
+                            description="Autenticação Firebase segura, controle de acesso por nível (CEO/Master/Revenda) e dados salvos na nuvem (Firestore)."
+                            color="indigo"
+                        />
+                    </div>
+                </div>
+            </section>
+        );
+
+        // NOVO: Item de FAQ
+        const FAQItem = ({ question, answer }) => {
+            const [isOpen, setIsOpen] = useState(false);
+            return (
+                <div className="border-b border-slate-800">
+                    <button 
+                        onClick={() => setIsOpen(!isOpen)} 
+                        className="w-full flex justify-between items-center py-4 text-left focus:outline-none"
+                    >
+                        <span className="text-lg font-semibold text-white">{question}</span>
+                        <ChevronRight size={20} className={`text-orange-500 transition-transform ${isOpen ? 'transform rotate-90' : ''}`} />
+                    </button>
+                    {isOpen && (
+                        <div className="pb-4 pt-2 text-slate-400 leading-relaxed animate-fade-in">
+                            <p>{answer}</p>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+        
+        // NOVO: Seção de FAQ (Perguntas)
+        const FAQSection = () => (
+            <section className="py-16 md:py-24 bg-slate-950 relative z-10">
+                <div className="max-w-4xl mx-auto px-4">
+                    <h2 className="text-3xl md:text-4xl font-black text-white text-center mb-4">Perguntas <span className="text-orange-500">Frequentes</span></h2>
+                    <p className="text-lg text-slate-400 text-center max-w-2xl mx-auto mb-12">Tire suas dúvidas sobre o Fire Gestor.</p>
+                    
+                    <div className="space-y-4">
+                        <FAQItem 
+                            question="O Bot WhatsApp é pago à parte?" 
+                            answer="Não. O acesso ao Bot está incluso na sua assinatura do Fire Gestor. Você só precisa seguir o processo de conexão na aba 'Configurações' para escanear o QR Code do seu WhatsApp."
+                        />
+                         <FAQItem 
+                            question="Quais são os níveis de acesso do sistema?" 
+                            answer="O sistema possui três níveis principais: CEO (acesso total), Master (cria Revendas e gerencia clientes) e Revenda (gerencia apenas seus próprios clientes e tem acesso a recursos de IA)."
+                        />
+                        <FAQItem 
+                            question="Como funciona o TESTE GRÁTIS 7 DIAS?" 
+                            answer="Ao se cadastrar, sua conta é ativada automaticamente com o plano Trial por 7 dias. Você terá acesso a todos os recursos para testar a automação e gestão antes de decidir pela assinatura."
+                        />
+                        <FAQItem 
+                            question="Onde meus dados são armazenados?" 
+                            answer="Todos os dados são armazenados de forma segura na nuvem usando o Google Firestore, garantindo alta disponibilidade e proteção das suas informações de clientes."
+                        />
+                    </div>
+                </div>
+            </section>
+        );
+
 
         // MODAL DE IMPORTAÇÃO/EXPORTAÇÃO
         // ADICIONADO showToast e isProcessing como props para substituir o alert() que causava o crash.
@@ -719,7 +839,10 @@
             const [aiResponse, setAiResponse] = useState('');
             const [aiLoading, setAiLoading] = useState(false);
             const [aiEvent, setAiEvent] = useState('Futebol');
-            const [userApiKey, setUserApiKey] = localStorage.getItem('firetv_ai_key') || '';
+            // 2. Removido localStorage: A chave será `defaultApiKey` ou a salva pelo CEO.
+            const [userApiKey, setUserApiKey] = useState(defaultApiKey); 
+            // Variável para armazenar a chave salva pelo CEO, se for o caso
+            const [ceoApiKey, setCeoApiKey] = useState(defaultApiKey); 
 
             // Config & Security
             const [msgCompany, setMsgCompany] = useState("Fire Gestor");
@@ -837,8 +960,26 @@
                     if (!initialTemplates.client) initialTemplates.client = {};
                     if (!initialTemplates.team) initialTemplates.team = {};
                     setMsgTemplates(initialTemplates);
+
+                    // 4. Carregar a chave do CEO (se existir)
+                    if (user.role === 'ceo') {
+                         const savedKey = user.aiApiKey || defaultApiKey;
+                         setCeoApiKey(savedKey);
+                         setUserApiKey(savedKey);
+                    } else {
+                         // Para Master/Revenda, usar a chave padrão
+                         setUserApiKey(defaultApiKey);
+                    }
                 }
             }, [user]);
+            
+            // 5. Atualizar a chave padrão se o CEO a mudar
+            useEffect(() => {
+                if (user?.role === 'ceo') {
+                    setUserApiKey(ceoApiKey);
+                }
+            }, [ceoApiKey, user]);
+
 
             // --- LOGOUT AGRESSIVO ---
             const handleLogout = async () => {
@@ -1042,7 +1183,7 @@
                     }
                 } catch (e) {
                     // clearTimeout(timeoutId); 
-                    if (e.message === 'Failed to fetch' || e.name === 'TypeError') {
+                    if (e.message.includes('Failed to fetch') || e.name === 'TypeError') {
                         addLog("❌ ERRO DE CONEXÃO: O navegador bloqueou o acesso.");
                         showToast("Erro: Servidor Bot Offline ou bloqueio de CORS.", 'error');
                     } else {
@@ -1372,36 +1513,35 @@
                 }
             };
 
-            // --- Lógica de Salvar Mensagens (Ajustada para o novo formato) ---
+            // --- Lógica de Salvar Mensagens e API Key (Ajustada) ---
             const handleSaveMessageConfig = async (e) => {
                 e.preventDefault();
                 setIsProcessing(true);
                 try {
-                    // Garantir que a estrutura client/team exista antes de salvar
-                    const newTemplates = {
-                        client: msgTemplates.client || {},
-                        team: msgTemplates.team || {}
-                    };
+                    // 6. Configurações salvas apenas no perfil do usuário CEO
+                    if (user.role === 'ceo') {
+                         const updatedFields = { 
+                            companyName: msgCompany, 
+                            messageTemplates: { client: msgTemplates.client || {}, team: msgTemplates.team || {} },
+                            aiApiKey: ceoApiKey, // Salva a chave no perfil do CEO
+                         };
 
-                    const updatedUser = { ...user, companyName: msgCompany, messageTemplates: newTemplates };
+                        await updateDoc(doc(getUsersCollection(), user.id), updatedFields);
+                        
+                        // Atualiza o estado local do usuário e a chave usada
+                        setUser(prev => ({...prev, ...updatedFields}));
+                        setUserApiKey(ceoApiKey); // Garante que a chave atual seja a salva
 
-                    if (userApiKey) {
-                         localStorage.setItem('firetv_ai_key', userApiKey);
-                         showToast("Chave API salva com sucesso!", 'success'); // Notificação para API Key
+                        showToast("Configurações salvas com sucesso!", 'success');
                     } else {
-                         localStorage.removeItem('firetv_ai_key');
-                         // Não mostra notificação de sucesso se apenas limpou a chave, mas mostra se salvou outras configs.
-                    }
+                        // Para Master/Revenda, salva apenas a empresa e os templates
+                        const updatedFields = { 
+                            companyName: msgCompany, 
+                            messageTemplates: { client: msgTemplates.client || {}, team: msgTemplates.team || {} },
+                         };
+                        await updateDoc(doc(getUsersCollection(), user.id), updatedFields);
+                        setUser(prev => ({...prev, ...updatedFields}));
 
-                    await updateDoc(doc(getUsersCollection(), user.id), { 
-                        companyName: msgCompany, 
-                        messageTemplates: newTemplates 
-                    });
-                    
-                    setUser(updatedUser);
-                    localStorage.setItem('firetv_user_session', JSON.stringify(updatedUser));
-                    // Notificação para Configurações de Mensagem
-                    if (!userApiKey) { // Evita duplicidade se a API Key também foi salva
                         showToast("Configurações salvas!", 'success');
                     }
                 } catch (e) {
@@ -1413,6 +1553,16 @@
 
             // --- IA LOGIC ---
             const handleAiAction = async (type) => {
+                // Se não houver chave definida (nem padrão, nem CEO customizada), impede a ação
+                const activeApiKey = user.role === 'ceo' ? ceoApiKey : defaultApiKey;
+                if (!activeApiKey || activeApiKey === defaultApiKey && user.role === 'ceo') { 
+                     if (user.role === 'ceo' && activeApiKey === defaultApiKey) {
+                        return showToast("CEO: Por favor, configure e salve sua chave de API.", 'error');
+                    } else if (!activeApiKey) {
+                        return showToast("Chave de API não configurada.", 'error');
+                    }
+                }
+
                 setAiLoading(true);
                 setAiResponse('');
                 let p = '';
@@ -1429,7 +1579,8 @@
                 }
 
                 try {
-                    const text = await callGemini(p, userApiKey);
+                    // Usa a chave que estiver ativa (CEO customizada ou padrão)
+                    const text = await callGemini(p, userApiKey); 
                     setAiResponse(text);
                     showToast("Resposta da IA gerada com sucesso!", 'success');
                 } catch(e) {
@@ -1620,19 +1771,55 @@
                 );
             };
 
+            // ** COMPONENTE DE NOTIFICAÇÃO MELHORADO (Foco na Estética e Feedback) **
             const Notification = () => {
+                const [isExiting, setIsExiting] = useState(false);
+
                 useEffect(() => {
                     if (notification.show) {
-                        const timer = setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 3000);
+                        setIsExiting(false);
+                        const timer = setTimeout(() => setIsExiting(true), 3000); // Começa a sair após 3s
                         return () => clearTimeout(timer);
                     }
-                }, [notification]);
+                }, [notification.show, notification.message, notification.type]);
 
-                if (!notification.show) return null;
-                const colors = { success: 'bg-green-500', error: 'bg-red-500', info: 'bg-blue-500' };
-                // Aumentado o z-index para garantir que fique sempre no topo
-                return <div className={`fixed bottom-24 md:bottom-5 right-5 ${colors[notification.type]} text-white px-5 py-3 rounded-xl shadow-2xl animate-slide-in z-[999]`}>{notification.message}</div>;
+                useEffect(() => {
+                    if (isExiting) {
+                        const timer = setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 500); // Remove totalmente após a animação
+                        return () => clearTimeout(timer);
+                    }
+                }, [isExiting]);
+
+                if (!notification.show && !isExiting) return null;
+                
+                const classes = { 
+                    success: 'bg-emerald-600 shadow-emerald-900/40 border-emerald-500/50', 
+                    error: 'bg-red-600 shadow-red-900/40 border-red-500/50', 
+                    info: 'bg-blue-600 shadow-blue-900/40 border-blue-500/50' 
+                };
+                
+                const icons = {
+                    success: <CheckCircle size={20} className="flex-shrink-0" />,
+                    error: <AlertTriangle size={20} className="flex-shrink-0" />,
+                    info: <Info size={20} className="flex-shrink-0" />
+                };
+
+                return (
+                    <div className={`
+                        fixed bottom-24 md:bottom-5 right-5 
+                        ${classes[notification.type]} 
+                        text-white px-5 py-3 rounded-xl 
+                        shadow-2xl border 
+                        transition-all duration-500 ease-in-out z-[999]
+                        ${isExiting ? 'opacity-0 translate-x-full' : 'opacity-100 translate-x-0'}
+                        flex items-center gap-3
+                    `}>
+                        {icons[notification.type]}
+                        <span className="font-medium">{notification.message}</span>
+                    </div>
+                );
             };
+            // ** FIM COMPONENTE DE NOTIFICAÇÃO MELHORADO **
 
             // --- NOVO: Modal de Edição/Envio de Mensagem (Passo 1) ---
             const MessageModal = () => {
@@ -1772,21 +1959,36 @@
 
             if (view === 'landing') {
                 return (
-                    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-center p-4 relative overflow-hidden">
-                        <div className="absolute inset-0 bg-grid-slate-800/10 [mask-image:linear-gradient(to_bottom,white_20%,transparent_100%)]"></div>
-                        <div className="relative z-10">
-                            <div className="inline-flex items-center gap-3 mb-4">
-                                <div className="bg-gradient-to-br from-orange-500 to-red-600 p-3 rounded-2xl animate-glow shadow-lg">
-                                    <Users size={40} className="text-white"/>
+                    <div className="min-h-screen bg-slate-950 relative overflow-hidden">
+                        {/* Fundo de Grade Profissional (Melhoria 1) */}
+                        <div className="absolute inset-0 bg-grid-slate-800/10 [mask-image:radial-gradient(ellipse_at_top,transparent_30%,#020617)]"></div>
+
+                        <div className="relative z-10 pt-20 pb-20 md:pt-32 md:pb-32 text-center max-w-7xl mx-auto px-4">
+                            {/* Hero Section */}
+                            <div className="relative z-10">
+                                <div className="inline-flex items-center gap-3 mb-4">
+                                    <div className="bg-gradient-to-br from-orange-500 to-red-600 p-3 rounded-2xl animate-glow shadow-lg">
+                                        <Users size={40} className="text-white"/>
+                                    </div>
+                                </div>
+                                <h1 className="text-4xl md:text-6xl font-black text-white leading-tight tracking-tighter mb-4">Gerencie seu IPTV<br/> com <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-500">Inteligência</span></h1>
+                                <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-8">O único sistema que integra gestão de clientes, equipe e um bot de WhatsApp para automatizar suas cobranças.</p>
+                                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                                    {/* Botão Atualizado (Melhoria 4: TESTE GRÁTIS 7 DIAS) */}
+                                    <button onClick={() => { setAuthType('register'); setShowAuthModal(true); }} className="w-full sm:w-auto bg-orange-600 hover:bg-orange-500 text-white font-bold text-lg px-8 py-4 rounded-xl transition-all shadow-lg shadow-orange-600/20 hover:scale-105">TESTE GRÁTIS 7 DIAS</button>
+                                    <button onClick={() => { setAuthType('login'); setShowAuthModal(true); }} className="w-full sm:w-auto text-slate-300 font-bold text-lg px-8 py-4 rounded-xl hover:bg-slate-800/50 transition-colors">Já tenho conta</button>
                                 </div>
                             </div>
-                            <h1 className="text-4xl md:text-6xl font-black text-white leading-tight tracking-tighter mb-4">Gerencie seu IPTV<br/> com <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-500">Inteligência</span></h1>
-                            <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-8">O único sistema que integra gestão de clientes, equipe e um bot de WhatsApp para automatizar suas cobranças.</p>
-                            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                                <button onClick={() => { setAuthType('register'); setShowAuthModal(true); }} className="w-full sm:w-auto bg-orange-600 hover:bg-orange-500 text-white font-bold text-lg px-8 py-4 rounded-xl transition-all shadow-lg shadow-orange-600/20 hover:scale-105">Criar Conta Grátis</button>
-                                <button onClick={() => { setAuthType('login'); setShowAuthModal(true); }} className="w-full sm:w-auto text-slate-300 font-bold text-lg px-8 py-4 rounded-xl hover:bg-slate-800/50 transition-colors">Já tenho conta</button>
-                            </div>
                         </div>
+
+                        {/* Features Section (Melhoria 2: O que o Gestor tem) */}
+                        <FeaturesSection />
+
+                        {/* FAQ Section (Melhoria 3: Perguntas) */}
+                        <FAQSection />
+
+                        <div className="h-20"></div> {/* Espaçamento final */}
+
                         {showAuthModal && <AuthModal />}
                         {showRegistrationSuccess && <RegistrationSuccess />}
                     </div>
@@ -2131,12 +2333,12 @@
                                                                             {/* Passo 6: WhatsApp Direto */}
                                                                             {member.whatsapp && (
                                                                                 <a href={`https://wa.me/55${member.whatsapp.replace(/\D/g,'')}`} target="_blank" className="p-2 bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white rounded-lg transition-colors border border-green-600/20 hover:border-transparent" title="WhatsApp"><MessageCircle size={18}/></a>
-                                                                            )}
-                                                                            
-                                                                            <ActionButton onClick={()=>handleRenew(member, 'user')} color="blue" icon={RefreshCw} title="Renovar" />
-                                                                            <ActionButton onClick={()=>{setEditingItem(member); setFormData(member); setNewMemberRole(member.role); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} title="Editar" />
-                                                                            <ActionButton onClick={()=>handleDelete(member.id, 'user')} color="red" icon={Trash2} title="Excluir (Raiz)" />
-                                                                        </div>
+                                                            )}
+                                                            
+                                                            <ActionButton onClick={()=>handleRenew(member, 'user')} color="blue" icon={RefreshCw} title="Renovar" />
+                                                            <ActionButton onClick={()=>{setEditingItem(member); setFormData(member); setNewMemberRole(member.role); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} title="Editar" />
+                                                            <ActionButton onClick={()=>handleDelete(member.id, 'user')} color="red" icon={Trash2} title="Excluir (Raiz)" />
+                                                        </div>
                                                                     </td>
                                                                 </tr>
                                                             );
@@ -2163,36 +2365,34 @@
                                         </div>
                                     </div>
 
-                                    {/* API KEY INPUT - SEMPRE VISIVEL PARA EDIÇÃO */}
-                                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
-                                        <h3 className="font-bold text-white mb-2 flex items-center gap-2"><Key size={18} className="text-yellow-500"/> Configuração da API (Gemini)</h3>
-                                        <div className="flex items-center gap-4">
-                                            <input type="text" value={userApiKey} onChange={(e) => setUserApiKey(e.target.value)} placeholder="Cole sua Chave de API Gemini aqui..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none focus:border-purple-500 transition-colors" />
-                                            <button onClick={handleSaveMessageConfig} disabled={isProcessing} className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
-                                                {isProcessing ? <LoadingSpinner size={16} /> : 'Salvar'}
-                                            </button>
+                                    {/* 3. API KEY INPUT - VISÍVEL APENAS PARA CEO */}
+                                    {user.role === 'ceo' && (
+                                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
+                                            <h3 className="font-bold text-white mb-2 flex items-center gap-2"><Key size={18} className="text-yellow-500"/> Configuração da API (Gemini)</h3>
+                                            <div className="flex items-center gap-4">
+                                                <input 
+                                                    type="text" 
+                                                    value={ceoApiKey} 
+                                                    onChange={(e) => setCeoApiKey(e.target.value)} 
+                                                    placeholder="Cole sua Chave de API Gemini aqui..." 
+                                                    className="flex-1 bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none focus:border-purple-500 transition-colors" 
+                                                />
+                                                <button onClick={handleSaveMessageConfig} disabled={isProcessing} className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+                                                    {isProcessing ? <LoadingSpinner size={16} /> : 'Salvar'}
+                                                </button>
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-2">A chave será usada por Master e Revenda.</p>
                                         </div>
-                                        <p className="text-xs text-slate-500 mt-2">A chave fica salva no seu navegador.</p>
-                                    </div>
+                                    )}
+                                    
+                                    {/* 3.1. Mensagem para Master/Revenda */}
+                                    {user.role !== 'ceo' && (
+                                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-6">
+                                            <h3 className="font-bold text-white mb-1 flex items-center gap-2"><Globe2 size={18} className="text-blue-400"/> Status da API</h3>
+                                            <p className="text-sm text-slate-400">Você está usando a chave de API fornecida pelo CEO para o Assistente Fire IA.</p>
+                                        </div>
+                                    )}
 
-                                    {/* AI VIEW SELECTOR */}
-                                    <div className="grid md:grid-cols-3 gap-4 mb-6">
-                                        <button onClick={()=>setAiView('support')} className={`p-6 rounded-2xl text-left transition-all ${aiView === 'support' ? 'bg-slate-800 border-purple-500' : 'bg-slate-900 border-slate-800 hover:bg-slate-800/50'} border-2`}>
-                                            <MessageSquare size={24} className="text-purple-400 mb-3"/>
-                                            <h3 className="font-bold text-lg text-white mb-1">Suporte Rápido</h3>
-                                            <p className="text-sm text-slate-400">Gere respostas para clientes com problemas comuns.</p>
-                                        </button>
-                                        <button onClick={()=>setAiView('marketing')} className={`p-6 rounded-2xl text-left transition-all ${aiView === 'marketing' ? 'bg-slate-800 border-orange-500' : 'bg-slate-900 border-slate-800 hover:bg-slate-800/50'} border-2`}>
-                                            <Megaphone size={24} className="text-orange-400 mb-3"/>
-                                            <h3 className="font-bold text-lg text-white mb-1">Marketing Digital</h3>
-                                            <p className="text-sm text-slate-400">Crie textos de venda para eventos e promoções.</p>
-                                        </button>
-                                        <button onClick={()=>setAiView('consultant')} className={`p-6 rounded-2xl text-left transition-all ${aiView === 'consultant' ? 'bg-slate-800 border-blue-500' : 'bg-slate-900 border-slate-800 hover:bg-slate-800/50'} border-2`}>
-                                            <BrainCircuit size={24} className="text-blue-400 mb-3"/>
-                                            <h3 className="font-bold text-lg text-white mb-1">Consultor Virtual</h3>
-                                            <p className="text-sm text-slate-400">Receba dicas para melhorar seus resultados.</p>
-                                        </button>
-                                    </div>
 
                                     {/* AI INTERACTION PANEL */}
                                     {aiView && (
