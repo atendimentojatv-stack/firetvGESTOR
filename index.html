@@ -80,9 +80,6 @@
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification, updatePassword, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
         import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, getDocs, setDoc, writeBatch } from 'firebase/firestore';
         
-        // --- CORREÇÃO DE IMPORTAÇÕES ---
-        // Removido 'Infinity' (palavra reservada que causa crash).
-        // Removidos ícones novos (FileSpreadsheet, Crown, etc) para evitar erro #130.
         import { 
             Users, LayoutDashboard, LogOut, Plus, Search, UserPlus, Shield, 
             Trash2, Edit, CheckCircle, XCircle, Calendar, Zap, TrendingUp, 
@@ -123,7 +120,9 @@
 
         // --- CONFIGURAÇÃO API ---
         const defaultApiKey = "AIzaSyCmbxg1nkPP2L_JRSsNN9uesaybciKQV70"; 
-        const VPS_BOT_URL = "https://api.firegestor.top"; 
+        
+        // --- NÃO PRECISAMOS MAIS DA URL EXTERNA, POIS USAREMOS FIREBASE DIRETO ---
+        // const VPS_BOT_URL = "https://api.firegestor.top"; 
 
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "AIzaSyClcK67ZPEC-4uky5y6RIYCyKF4BqO3xcE",
@@ -487,23 +486,26 @@
 
             const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
 
-            // --- FUNÇÕES DO NOVO BOT ---
+            // --- FUNÇÕES DO BOT (AGORA USA FIREBASE) ---
             const addLog = (msg) => {
                 const time = new Date().toLocaleTimeString();
                 setClientLog(prev => [`[${time}] ${msg}`, ...prev].slice(0, 50));
             };
 
             const handleBotAction = async (action) => {
+                // Em vez de chamar fetch, vamos escrever no Firebase
                 addLog(`Enviando comando: ${action}...`);
                 try {
-                    await fetch(`${VPS_BOT_URL}/sessions/${action}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ sessionId: user.id })
-                    });
-                    addLog(`Comando ${action} enviado.`);
+                    const docRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
+                    // Define 'start' ou 'logout' no banco. O backend (index.js) vai ler isso e agir.
+                    await setDoc(docRef, { 
+                        action: action === 'start' ? 'start' : (action === 'stop' ? 'logout' : 'force_logout'),
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+
+                    addLog(`Comando ${action} escrito no banco.`);
                 } catch (e) {
-                    addLog(`Erro ao enviar comando: ${e.message}`);
+                    addLog(`Erro ao escrever comando: ${e.message}`);
                     showToast("Erro no comando do bot", "error");
                 }
             };
@@ -557,42 +559,36 @@
             
             useEffect(() => { if (user?.role === 'ceo') setUserApiKey(ceoApiKey); }, [ceoApiKey, user]);
 
-            // --- LÓGICA DO NOVO BOT (SSE) ---
+            // --- LÓGICA DO BOT (AGORA USA ONSNAPSHOT DO FIREBASE) ---
             useEffect(() => {
-                if (!user?.id || activeTab !== 'settings' || settingsView !== 'bot') return;
+                if (!user?.id) return;
+                
+                // Monitora o status da conexão diretamente no Firestore
+                // Caminho: artifacts -> APP_ID -> users -> USER_ID -> bot_connection -> session
+                const docRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
+                
+                const unsubBot = onSnapshot(docRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        
+                        // Atualiza o estado local com o que está no banco
+                        if (data.status) {
+                            if (data.status !== botSession.status) {
+                                addLog(`📥 STATUS ATUALIZADO: ${data.status.toUpperCase()}`);
+                            }
+                            setBotSession(prev => ({ 
+                                ...prev, 
+                                status: data.status, 
+                                qrCode: data.qrCode || null 
+                            }));
+                        }
+                    }
+                }, (err) => {
+                    console.error("Erro ao ouvir status do bot:", err);
+                });
 
-                let eventSource;
-                const startSSE = () => {
-                    addLog(`Conectando ao servidor: ${VPS_BOT_URL}...`);
-                    eventSource = new EventSource(`${VPS_BOT_URL}/sessions/status/${user.id}`);
-
-                    eventSource.onopen = () => {
-                        addLog("✅ Conexão SSE estabelecida com o servidor.");
-                        setBotSession(prev => ({ ...prev, status: 'connecting' }));
-                    };
-
-                    eventSource.addEventListener('status', (e) => {
-                        const data = JSON.parse(e.data);
-                        addLog(`📥 STATUS RECEBIDO: ${data.status.toUpperCase()}`);
-                        setBotSession(prev => ({ ...prev, status: data.status, qrCode: data.qrCode || null }));
-                    });
-
-                    eventSource.addEventListener('qrcode', (e) => {
-                        const data = JSON.parse(e.data);
-                        addLog("📸 QR CODE CHEGOU! Renderizando...");
-                        setBotSession(prev => ({ ...prev, status: 'qrcode', qrCode: data.qrCode }));
-                    });
-
-                    eventSource.onerror = (err) => {
-                        addLog("❌ Erro na conexão com o servidor. Tentando reconectar...");
-                        eventSource.close();
-                        setTimeout(startSSE, 3000);
-                    };
-                };
-
-                startSSE();
-                return () => { if (eventSource) eventSource.close(); };
-            }, [user, activeTab, settingsView]);
+                return () => unsubBot();
+            }, [user]); // Dependência apenas do User, para manter a conexão ativa em background se quiser
 
 
             const handleLogout = async () => {
@@ -625,18 +621,18 @@
                 if (!messageClient || !messageText) return;
                 setIsProcessing(true);
                 try {
-                    // ATUALIZADO PARA USAR A NOVA URL DO BOT
-                    const response = await fetch(`${VPS_BOT_URL}/messages/send`, { 
-                        method: 'POST', 
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            sessionId: user.id, 
-                            to: `55${messageClient.whatsapp.replace(/\D/g,'')}`, 
-                            message: messageText 
-                        })
+                    // ATUALIZADO: Agora cria um documento na coleção 'bot_messages'
+                    // O backend index.js escuta essa coleção e envia a mensagem quando vê 'status: pending'
+                    const messagesRef = collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages');
+                    
+                    await addDoc(messagesRef, {
+                        to: `55${messageClient.whatsapp.replace(/\D/g,'')}`,
+                        body: messageText,
+                        status: 'pending',
+                        createdAt: serverTimestamp()
                     });
-                    if (!response.ok) throw new Error(await response.text());
-                    showToast("Mensagem enviada com sucesso!", 'success'); 
+
+                    showToast("Mensagem colocada na fila de envio!", 'success'); 
                     setIsMessageModalOpen(false); setMessageText('');
                 } catch (e) { showToast(`Falha no envio: ${e.message}`, 'error'); }
                 finally { setIsProcessing(false); }
@@ -722,7 +718,14 @@
                                 showToast('Renovação aplicada!', 'success');
                                 if (item.whatsapp && botSession?.status === 'connected') {
                                     const message = generateWhatsAppMessage({...item, dueDate: newDueDate}, user, 'client');
-                                    await fetch(`${VPS_BOT_URL}/messages/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: user.id, to: `55${item.whatsapp.replace(/\D/g,'')}`, message }) });
+                                    // REUTILIZA A LOGICA DO BANCO PARA ENVIAR MENSAGEM
+                                    const messagesRef = collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages');
+                                    await addDoc(messagesRef, {
+                                        to: `55${item.whatsapp.replace(/\D/g,'')}`,
+                                        body: message,
+                                        status: 'pending',
+                                        createdAt: serverTimestamp()
+                                    });
                                 }
                             }
                         } catch(e) { showToast(`Erro na renovação: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
@@ -1193,7 +1196,7 @@
                                         </div>
                                     )}
 
-                                    {/* --- AQUI ESTÁ A PARTE DO BOT NOVA QUE VOCÊ PEDIU --- */}
+                                    {/* --- AQUI ESTÁ A PARTE DO BOT CORRIGIDA --- */}
                                     {settingsView === 'bot' && (
                                         <div className="max-w-4xl mx-auto">
                                             <button onClick={() => setSettingsView('menu')} className="mb-4 text-slate-400 hover:text-white flex items-center gap-2">← Voltar</button>
