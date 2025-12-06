@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>FIRE GESTOR - Sistema IPTV + Bot</title>
     
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f97316' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='9' cy='7' r='4'/%3E%3Cpath d='M22 21v-2a4 4 0 0 0-3-3.87'/%3E%3Cpath d='M16 3.13a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f97316' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='9' cy='7' r='4'/%P3E%3Cpath d='M22 21v-2a4 4 0 0 0-3-3.87'/%P3E%3Cpath d='M16 3.13a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -51,6 +51,7 @@
 
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #020617; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+        /* OCULTA AS BARRAS DE ROLAGEM */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
@@ -74,7 +75,7 @@
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
-        import React, { useState, useEffect, useMemo, useCallback } from 'react';
+        import React, { useState, useEffect, useMemo, useCallback, useLayoutEffect } from 'react';
         import { createRoot } from 'react-dom/client';
         import { initializeApp } from 'firebase/app';
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification, updatePassword, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
@@ -86,7 +87,8 @@
             Smartphone, Settings, RefreshCw, MessageCircle, AlertTriangle, 
             DollarSign, Lock, Eye, EyeOff, Clock, Ban, Save, FileText, Info, 
             Sparkles, BarChart, ArrowLeft, Send, Mail, Key, 
-            ChevronRight, Wallet, QrCode, Wifi, WifiOff, Menu, X, User 
+            ChevronRight, Wallet, QrCode, Wifi, WifiOff, Menu, X, User,
+            Megaphone, Bot, LifeBuoy
         } from 'lucide-react';
 
         // --- ERROR BOUNDARY ---
@@ -121,9 +123,6 @@
         // --- CONFIGURAÇÃO API ---
         const defaultApiKey = "AIzaSyCmbxg1nkPP2L_JRSsNN9uesaybciKQV70"; 
         
-        // --- NÃO PRECISAMOS MAIS DA URL EXTERNA, POIS USAREMOS FIREBASE DIRETO ---
-        // const VPS_BOT_URL = "https://api.firegestor.top"; 
-
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "AIzaSyClcK67ZPEC-4uky5y6RIYCyKF4BqO3xcE",
             authDomain: "firetv-gestor.firebaseapp.com",
@@ -141,33 +140,68 @@
         const getUsersCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'users');
         const getClientsCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'clients');
 
-        // --- UTILITÁRIOS ---
-        const formatDate = (val) => { try { if (!val) return '-'; const date = val.toDate ? val.toDate() : new Date(val); return new Intl.DateTimeFormat('pt-BR').format(date); } catch { return '-'; } };
+        // --- UTILITÁRIOS (CORRIGIDO PARA FUSO HORÁRIO) ---
+        
+        // CORREÇÃO AQUI: Formatação de data manual para evitar bug de fuso horário (29 virar 28)
+        const formatDate = (val) => { 
+            try { 
+                if (!val) return '-'; 
+                
+                // Se for um Timestamp do Firebase (objeto)
+                if (typeof val === 'object' && val.toDate) {
+                    return new Intl.DateTimeFormat('pt-BR').format(val.toDate());
+                }
+                
+                // Se for STRING "YYYY-MM-DD", fazemos o split manual para garantir
+                if (typeof val === 'string' && val.includes('-') && val.length === 10) {
+                    const [ano, mes, dia] = val.split('-');
+                    return `${dia}/${mes}/${ano}`;
+                }
+
+                // Fallback
+                const date = new Date(val); 
+                return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(date); 
+            } catch { return '-'; } 
+        };
+
         const formatCurrency = (val) => { try { return (parseFloat(val) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); } catch { return 'R$ 0,00'; } };
         const getDaysLeft = (expirationDate) => { try { if (!expirationDate) return 0; const end = typeof expirationDate === 'object' && expirationDate.toDate ? expirationDate.toDate() : new Date(expirationDate); const now = new Date(); if (isNaN(end.getTime())) return 0; return Math.ceil((end - now) / (1000 * 60 * 60 * 24)); } catch { return 0; } };
         const isPanelExpired = (expirationDate) => { if (!expirationDate) return false; const end = typeof expirationDate === 'object' && expirationDate.toDate ? expirationDate.toDate() : new Date(expirationDate); return end < new Date(); };
 
+        // ATUALIZAÇÃO: Lógica para incluir a contagem de dias no status para clientes
         const getClientStatus = (dueDate) => {
             try {
                 if (!dueDate) return { status: 'no_date', label: 'Sem Data', color: 'slate' };
                 const today = new Date(); today.setHours(0, 0, 0, 0); 
                 const dateParts = dueDate.split('-'); 
                 if (dateParts.length !== 3) return { status: 'no_date', label: 'Data Inválida', color: 'slate' };
-                const due = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2])); due.setHours(0, 0, 0, 0);
+                // Cria a data usando o construtor local (ano, mes-1, dia) para garantir meia-noite local
+                const due = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2])); 
+                due.setHours(0, 0, 0, 0);
+                
                 if (isNaN(due.getTime())) return { status: 'no_date', label: 'Data Inválida', color: 'slate' };
                 const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                if (diffDays < 0) return { status: 'expired', label: 'Vencido', color: 'red', days: diffDays };
-                if (diffDays === 0) return { status: 'today', label: 'Vence Hoje', color: 'orange', days: 0 };
-                if (diffDays <= 3) return { status: 'expiring', label: `Vence em ${diffDays}d`, color: 'yellow', days: diffDays };
-                return { status: 'active', label: 'Ativo', color: 'green', days: diffDays };
+                
+                if (diffDays < 0) {
+                    const absDays = Math.abs(diffDays);
+                    return { status: 'expired', label: `Vencido (-${absDays} dias)`, color: 'red', days: diffDays };
+                }
+                if (diffDays === 0) return { status: 'today', label: `Vence HOJE (0 dias)`, color: 'orange', days: 0 };
+                
+                // Mudei 'expiring' e 'active' para serem ATIVO e ter o detalhe dos dias
+                if (diffDays <= 3) return { status: 'expiring', label: `Ativo (Vence em ${diffDays} dias)`, color: 'yellow', days: diffDays };
+                return { status: 'active', label: `Ativo (Vence em ${diffDays} dias)`, color: 'green', days: diffDays };
             } catch (e) { return { status: 'no_date', label: 'Erro', color: 'slate' }; }
         };
 
-        const generateWhatsAppMessage = (item, userSettings, type = 'client') => {
+        // ALTERAÇÃO 1: Adicionada a lógica para o status 'renew'
+        const generateWhatsAppMessage = (item, userSettings, type = 'client', statusOverride) => {
             if (!item) return "";
             const isClient = type === 'client';
-            const status = isClient ? getClientStatus(item.dueDate).status : 'team_contact';
-            const days = isClient ? getClientStatus(item.dueDate).days : 0;
+            // Usa statusOverride (como 'renew') se fornecido, senão usa o status normal
+            const statusData = isClient ? getClientStatus(item.dueDate) : { status: 'team_contact', days: 0 }; 
+            const status = statusOverride || statusData.status;
+            const days = statusData.days;
             const company = userSettings?.companyName || "Fire Gestor";
             const templates = userSettings?.messageTemplates?.[type] || {}; 
             
@@ -175,15 +209,21 @@
             const teamVars = { '{nome_revenda}': item.name || '', '{master}': userSettings.name || 'Master', '{email_revenda}': item.email || '', '{whatsapp_revenda}': item.whatsapp || '', '{valor_pago}': formatCurrency(item.valuePaid || 0) };
 
             const defaultGreeting = `Olá *{nome}*, tudo bem? Aqui é do *{empresa}*.\n\n`;
+            
+            // ATUALIZAÇÃO: Templates padrões com sugestões do usuário
             const clientDefaults = {
-                expired: defaultGreeting + `⚠️ *SEU PLANO DE {valor} ESTÁ VENCIDO* há {dias} dias.\nEvite o corte do sinal, renove agora mesmo!`,
-                today: defaultGreeting + `⚠️ *ATENÇÃO:* Seu plano de {valor} vence *HOJE*.\nGaranta a renovação para não perder a programação.`,
-                expiring: defaultGreeting + `⏳ Seu plano ({valor}) vence em apenas *{dias} dias* ({vencimento}).\nQue tal já deixar renovado?`,
-                active: defaultGreeting + `✅ Seu plano de {valor} está ativo até *{vencimento}*.\nAgradecemos a preferência!`
+                expired: templates.client?.expired || defaultGreeting + `⚠️ *SEU PLANO DE {valor} ESTÁ VENCIDO* há {dias} dias.\nEvite o corte do sinal, renove agora mesmo!`,
+                today: templates.client?.today || defaultGreeting + `⚠️ *ATENÇÃO:* Seu plano de {valor} vence *HOJE*.\nGaranta a renovação para não perder a programação.`,
+                expiring: templates.client?.expiring || defaultGreeting + `⏳ Seu plano ({valor}) vence em apenas *{dias} dias* ({vencimento}).\nQue tal já deixar renovado?`,
+                active: templates.client?.active || defaultGreeting + `✅ Seu plano de {valor} está ativo até *{vencimento}*.\nAgradecemos a preferência!`,
+                // NOVO TEMPLATE DE RENOVAÇÃO MANUAL
+                renew: templates.client?.renew || defaultGreeting + `🥳 *RENOVAÇÃO APLICADA!* Seu plano de {valor} foi renovado com sucesso e agora está ativo até *{vencimento}*.\nObrigado pela preferência!`,
+                no_date: defaultGreeting + `Seu plano ({valor}) está com data de vencimento pendente. Por favor, verifique.`,
+                no_status: defaultGreeting + `Seu plano ({valor}) está ativo.`
             };
-            const teamDefault = `Olá *{nome_revenda}*, sou o Master *{master}*.\n\nPrecisamos conversar sobre o painel. Favor responder assim que possível.`;
+            const teamDefault = templates.team?.team_contact || `Olá *{nome_revenda}*, sou o Master *{master}*.\n\nPrecisamos conversar sobre o painel. Favor responder assim que possível.`;
 
-            let template = isClient ? (templates[status] || clientDefaults[status] || clientDefaults.active) : (templates['team_contact'] || teamDefault);
+            let template = isClient ? (clientDefaults[status] || clientDefaults.active) : (teamDefault);
             let message = template;
             
             if (isClient) for (const key in clientVars) message = message.replace(new RegExp(key, 'g'), clientVars[key]);
@@ -197,13 +237,17 @@
             const key = apiKey || defaultApiKey;
             if (!key) return "Chave de API não configurada.";
             try {
+                // ATUALIZAÇÃO: Usando gemini-2.5-flash-preview-09-2025 para garantir acesso ao Google Search para dados atuais (embora não usado nos prompts atuais, é boa prática)
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ "google_search": {} }] }) // Adicionado Google Search
                 });
                 const data = await response.json();
-                return data.candidates[0].content.parts[0].text;
+                if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text) {
+                     return data.candidates[0].content.parts[0].text;
+                }
+                return "Erro na IA: Resposta inválida ou vazia.";
             } catch (error) { return "Erro na IA: " + error.message; }
         };
 
@@ -212,6 +256,7 @@
         const RoleBadge = ({ role }) => {
             const roles = { ceo: { l: 'CEO', c: 'bg-red-500/20 text-red-400' }, master: { l: 'Master', c: 'bg-purple-500/20 text-purple-400' }, reseller: { l: 'Revenda', c: 'bg-blue-500/20 text-blue-400' } };
             const { l, c } = roles[role] || { l: '?', c: 'bg-slate-500/20 text-slate-400' };
+            // ATUALIZAÇÃO: Exibe a identificação visual
             return <span className={`px-2 py-0.5 text-[9px] font-bold rounded ${c}`}>{l}</span>;
         };
         const StatCard = ({ title, value, icon, color }) => (
@@ -228,7 +273,8 @@
         const InfoField = ({ label, value, icon: Icon, fullWidth, color = 'text-slate-400' }) => (
             <div className={`bg-slate-950 p-3 rounded-lg border border-slate-800 ${fullWidth ? 'col-span-2' : ''}`}>
                 <p className="text-[10px] font-bold uppercase text-slate-500 mb-1 flex items-center gap-1"><Icon size={12} className={color}/> {label}</p>
-                <p className="text-white font-medium break-all">{value}</p>
+                {/* CORREÇÃO AQUI: Adicionado style={{ whiteSpace: 'pre-wrap' }} para preservar as quebras de linha */}
+                <p className="text-white font-medium break-all" style={{ whiteSpace: 'pre-wrap' }}>{value}</p>
             </div>
         );
         const FeatureCard = ({ icon: Icon, title, description, color }) => (
@@ -249,6 +295,95 @@
                 </div>
             );
         };
+        
+        // --- COMPONENTES DA FIRE IA ---
+        const AiFeatureCard = ({ icon: Icon, title, description, color, onClick }) => (
+            <button onClick={onClick} className={`w-full bg-slate-900 border border-slate-800 p-6 rounded-2xl transition-all hover:shadow-xl hover:shadow-${color}-900/10 hover:border-${color}-500/50 text-left`}>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 bg-${color}-500/10 text-${color}-500`}><Icon size={24} /></div>
+                <h3 className="text-xl font-bold text-white mb-1">{title}</h3>
+                <p className="text-slate-400 text-sm">{description}</p>
+            </button>
+        );
+
+        const AiFeatureContent = ({ type, AiIcon, title, subtitle, children, setAiView }) => (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col min-h-[400px]">
+                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-800">
+                    <button onClick={() => setAiView('menu')} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400"><ArrowLeft size={20}/></button>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-purple-500/10 text-purple-500`}><AiIcon size={20} /></div>
+                    <div>
+                        <h2 className="text-xl font-bold text-white">{title}</h2>
+                        <p className="text-xs text-slate-400">{subtitle}</p>
+                    </div>
+                </div>
+                {children}
+            </div>
+        );
+        // --- FIM COMPONENTES DA FIRE IA ---
+
+        // --- COMPONENTES DE MODAL ESTÁVEIS (CORREÇÃO DO BUG DE PISCAR) ---
+
+        // O BUG DE "PISCAR" AO DIGITAR OCORRIA PORQUE ESTE COMPONENTE ERA RE-CRIADO
+        // DENTRO DA FUNÇÃO DO PAI (FireTVManager) A CADA RENDERIZAÇÃO.
+        // MOVER PARA CÁ GARANTE ESTABILIDADE E MANTÉM O FOCO DO INPUT.
+        const MessageModal = React.memo(({ messageClient, messageEdit, setMessageEdit, isProcessing, setIsMessageModalOpen, showToast, sendBotMessageFromModal }) => {
+            if (!messageClient) return null;
+            const handleSend = () => { 
+                if (!messageEdit.trim()) return showToast("Mensagem vazia.", 'error'); 
+                sendBotMessageFromModal(); 
+            };
+            
+            // O useLayoutEffect garante que o foco seja aplicado antes da pintura do navegador, estabilizando a digitação.
+            const textareaRef = React.useRef(null);
+            useLayoutEffect(() => {
+                if (textareaRef.current) {
+                    textareaRef.current.focus();
+                    // Move o cursor para o final do texto pré-carregado
+                    textareaRef.current.setSelectionRange(messageEdit.length, messageEdit.length);
+                }
+            }, [messageClient]); // O foco é aplicado apenas quando o cliente/modal é alterado.
+
+            return (
+                <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 relative">
+                        <button onClick={() => setIsMessageModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400 hover:text-white"><XCircle size={20}/></button>
+                        <h3 className="font-bold text-white text-xl mb-2 flex items-center gap-2"><Send size={20}/> Enviar Mensagem</h3>
+                        <p className="text-sm text-slate-400 mb-6">Para: {messageClient.name}</p>
+                        
+                        <textarea rows="8" 
+                            ref={textareaRef}
+                            value={messageEdit} 
+                            onChange={e => setMessageEdit(e.target.value)} 
+                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none text-white text-sm resize-none mb-4 focus:ring-2 focus:ring-purple-500"
+                        />
+                        
+                        <button onClick={handleSend} disabled={isProcessing} className="w-full bg-purple-600 hover:bg-purple-500 py-3.5 rounded-xl font-bold text-white mb-2">{isProcessing ? <LoadingSpinner /> : 'Enviar via Bot'}</button>
+                        <a href={`https://wa.me/55${messageClient.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(messageEdit)}`} target="_blank" className="w-full bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white py-2 rounded-xl font-bold text-sm flex justify-center items-center gap-2 border border-green-600/20">Abrir no WhatsApp Web</a>
+                    </div>
+                </div>
+            );
+        });
+
+        // Movido para fora do componente FireTVManager por boas práticas de estabilidade
+        const ViewModal = ({ isViewModalOpen, setIsViewModalOpen, viewingItem, InfoField, UserPlus, Smartphone, Calendar, DollarSign, Wifi, FileText, Info, XCircle, formatCurrency, formatDate }) => {
+            if (!isViewModalOpen || !viewingItem) return null;
+            const isClient = viewingItem.email === undefined;
+            return (
+                <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 relative">
+                        <button onClick={() => setIsViewModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400 hover:text-white"><XCircle size={20}/></button>
+                        <h3 className="font-bold text-white text-xl mb-4 flex items-center gap-2"><Info size={20} className="text-orange-500"/> Detalhes</h3>
+                        <div className="space-y-4 text-sm">
+                            <div className="grid grid-cols-2 gap-4"><InfoField label="Nome" value={viewingItem.name} icon={UserPlus} /><InfoField label="WhatsApp" value={viewingItem.whatsapp} icon={Smartphone} /></div>
+                            {isClient ? <><div className="grid grid-cols-2 gap-4"><InfoField label="Vencimento" value={formatDate(viewingItem.dueDate)} icon={Calendar} /><InfoField label="Valor" value={formatCurrency(viewingItem.value)} icon={DollarSign} /></div><InfoField label="Login" value={viewingItem.username} icon={Wifi} /></> : <><InfoField label="Email" value={viewingItem.email} icon={Mail} /><InfoField label="Expiração" value={formatDate(viewingItem.panelExpiration)} icon={Clock} /></>}
+                            <div className="pt-4 border-t border-slate-800"><InfoField label="Observação" value={viewingItem.observation || 'Nenhuma'} icon={FileText} fullWidth /></div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- FIM COMPONENTES DE MODAL ESTÁVEIS ---
+
 
         const FeaturesSection = () => (
             <section className="py-16 md:py-24 bg-slate-950 relative z-10">
@@ -417,7 +552,7 @@
                                                 {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                             </select>
                                         </div>
-                                    ))}
+                            ))}
                                     <button onClick={processImport} disabled={isProcessing} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg mt-2">Confirmar</button>
                                 </div>
                             )}
@@ -444,7 +579,8 @@
             const [showAuthModal, setShowAuthModal] = useState(false);
             const [showRegistrationSuccess, setShowRegistrationSuccess] = useState(false);
             const [authType, setAuthType] = useState('login');
-            const [filterStatus, setFilterStatus] = useState('all');
+            // ATUALIZAÇÃO: Adicionado 'expired' como filtro de status
+            const [filterStatus, setFilterStatus] = useState('all'); 
             const [searchTerm, setSearchTerm] = useState('');
             const [isAddModalOpen, setIsAddModalOpen] = useState(false);
             const [modalType, setModalType] = useState('client'); 
@@ -453,12 +589,14 @@
             const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
             const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
             const [isProcessing, setIsProcessing] = useState(false);
-            const [teamFilter, setTeamFilter] = useState('master');
+            // ATUALIZAÇÃO: Filtro de time setado para 'all' para mostrar todos inicialmente no painel de equipe
+            const [teamFilter, setTeamFilter] = useState('all');
             const [searchTeamTerm, setSearchTeamTerm] = useState('');
             const [newMemberRole, setNewMemberRole] = useState("reseller");
             const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
             const [messageClient, setMessageClient] = useState(null);
-            const [messageText, setMessageText] = useState('');
+            // ESTADO LOCAL TEMPORÁRIO PARA EDIÇÃO DENTRO DO MODAL
+            const [messageEdit, setMessageEdit] = useState('');
             const [isViewModalOpen, setIsViewModalOpen] = useState(false);
             const [viewingItem, setViewingItem] = useState(null); 
             const [isPanelExpModalOpen, setIsPanelExpModalOpen] = useState(false);
@@ -467,15 +605,20 @@
             const [selectedClients, setSelectedClients] = useState([]);
             const [isImportModalOpen, setIsImportModalOpen] = useState(false);
             const [settingsView, setSettingsView] = useState('menu'); 
+            // ATUALIZAÇÃO IA: Alterado para 'menu'
             const [aiView, setAiView] = useState('menu');
             const [aiInput, setAiInput] = useState('');
             const [aiResponse, setAiResponse] = useState('');
             const [aiLoading, setAiLoading] = useState(false);
-            const [aiEvent, setAiEvent] = useState('Futebol');
+            // ATUALIZAÇÃO IA: Opções de prompt de marketing
+            const [marketingPrompt, setMarketingPrompt] = useState('Futebol: Clássico Local');
             const [userApiKey, setUserApiKey] = useState(defaultApiKey); 
             const [ceoApiKey, setCeoApiKey] = useState(defaultApiKey); 
             const [msgCompany, setMsgCompany] = useState("Fire Gestor");
+            // CORREÇÃO: Inicialização correta de msgTemplates usando useState.
             const [msgTemplates, setMsgTemplates] = useState({});
+            // ATUALIZAÇÃO: Estado para guardar o horário de disparo (apenas Revenda/Master)
+            const [botSendTime, setBotSendTime] = useState("09:00"); 
             const [newEmail, setNewEmail] = useState('');
             const [newPassword, setNewPassword] = useState('');
             const [currentPassword, setCurrentPassword] = useState('');
@@ -510,7 +653,7 @@
                 }
             };
             
-            // --- INICIALIZAÇÃO ---
+            // --- INICIALIZAÇÃO E CHAVE API CENTRALIZADA (REQUISITO) ---
             useEffect(() => {
                 const init = async () => {
                     const savedUser = localStorage.getItem('firetv_user_session');
@@ -550,14 +693,39 @@
                     if (!initialTemplates.client) initialTemplates.client = {};
                     if (!initialTemplates.team) initialTemplates.team = {};
                     setMsgTemplates(initialTemplates);
-                    if (user.role === 'ceo') {
-                         const savedKey = user.aiApiKey || defaultApiKey;
-                         setCeoApiKey(savedKey); setUserApiKey(savedKey);
-                    } else { setUserApiKey(defaultApiKey); }
+                    // ATUALIZAÇÃO: Carrega o horário de disparo do bot das configurações do usuário
+                    setBotSendTime(user.botSendTime || "09:00");
                 }
             }, [user]);
             
-            useEffect(() => { if (user?.role === 'ceo') setUserApiKey(ceoApiKey); }, [ceoApiKey, user]);
+            // ATUALIZAÇÃO: LÓGICA DA CHAVE API CENTRALIZADA (Requisito: CEO configura, todos usam)
+            useEffect(() => {
+                if (!user) return;
+                
+                if (user.role === 'ceo') {
+                    const savedKey = user.aiApiKey || defaultApiKey;
+                    setCeoApiKey(savedKey); 
+                    setUserApiKey(savedKey);
+                    return;
+                }
+                
+                // Se for Master ou Revenda, escuta o perfil do CEO para obter a chave central
+                const ceoQuery = query(getUsersCollection(), where('role', '==', 'ceo'));
+                const unsubCeo = onSnapshot(ceoQuery, (s) => {
+                    if (!s.empty) {
+                        const ceoData = s.docs[0].data();
+                        // Master/Revenda usa a chave salva pelo CEO, ou a chave default do código se não houver
+                        setUserApiKey(ceoData.aiApiKey || defaultApiKey); 
+                    } else {
+                        setUserApiKey(defaultApiKey);
+                    }
+                }, (err) => {
+                    console.error("Erro ao ler chave do CEO:", err);
+                    setUserApiKey(defaultApiKey);
+                });
+
+                return () => unsubCeo();
+            }, [user]);
 
             // --- LÓGICA DO BOT (AGORA USA ONSNAPSHOT DO FIREBASE) ---
             useEffect(() => {
@@ -601,6 +769,7 @@
                 const unsubClients = onSnapshot(qClients, (s) => setClients(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 let unsubTeam = () => {};
                 if (user.role === 'ceo') {
+                    // Se CEO, busca todos os usuários (exceto o admin padrão)
                     const qTeam = query(getUsersCollection()); 
                     unsubTeam = onSnapshot(qTeam, (s) => setTeam(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.status !== 'deleted' && u.email !== 'admin@firetv.com')));
                 } else {
@@ -611,14 +780,16 @@
             }, [user, view]);
 
             // --- LÓGICA DE MENSAGEM DO PAINEL (CLIENTES) ---
-            const handleOpenMessageModal = (client, type = 'client') => {
+            const handleOpenMessageModal = useCallback((client, type = 'client') => {
+                const message = generateWhatsAppMessage(client, user, type);
                 setMessageClient(client);
-                setMessageText(generateWhatsAppMessage(client, user, type));
+                setMessageEdit(message); // Usa o novo estado local para edição
                 setIsMessageModalOpen(true);
-            };
+            }, [user]); // Depende apenas do usuário (para templates)
 
-            const sendBotMessageFromModal = async () => {
-                if (!messageClient || !messageText) return;
+            const sendBotMessageFromModal = useCallback(async () => {
+                // AGORA USA messageEdit, e não messageText
+                if (!messageClient || !messageEdit) return;
                 setIsProcessing(true);
                 try {
                     // ATUALIZADO: Agora cria um documento na coleção 'bot_messages'
@@ -627,27 +798,42 @@
                     
                     await addDoc(messagesRef, {
                         to: `55${messageClient.whatsapp.replace(/\D/g,'')}`,
-                        body: messageText,
+                        body: messageEdit, // Envia o texto editado localmente
                         status: 'pending',
                         createdAt: serverTimestamp()
                     });
 
                     showToast("Mensagem colocada na fila de envio!", 'success'); 
-                    setIsMessageModalOpen(false); setMessageText('');
+                    setIsMessageModalOpen(false); setMessageEdit(''); // Limpa o estado local
                 } catch (e) { showToast(`Falha no envio: ${e.message}`, 'error'); }
                 finally { setIsProcessing(false); }
-            };
+            }, [messageClient, messageEdit, user, showToast, setIsMessageModalOpen, setIsProcessing, setMessageEdit]);
+            // FIM DO USECALLBACK
 
             const handleExpDaysChange = async (e) => {
                 e.preventDefault();
-                if (!editingItem || modalType !== 'user' || expDays === 0) return showToast("Ajuste um número de dias válido.", 'error');
+                // O expDays pode ser 0 se a intenção for apenas atualizar a data base para "hoje" antes de adicionar dias,
+                // mas dado o contexto do usuário, vamos forçar uma entrada válida para o ajuste manual.
+                if (!editingItem || modalType !== 'user' || expDays === 0) { 
+                    if (expDays === 0) {
+                        return showToast("Insira um número de dias diferente de zero.", 'error');
+                    }
+                    return showToast("Ajuste um número de dias válido.", 'error');
+                }
                 setIsProcessing(true);
                 try {
                     let currentExp = new Date(editingItem.panelExpiration);
+                    // Garante que a data inicial seja hoje se estiver expirada ou for inválida
                     if (isNaN(currentExp.getTime()) || currentExp < new Date()) currentExp = new Date(); 
-                    const newDate = new Date(currentExp); newDate.setDate(newDate.getDate() + expDays);
+                    const newDate = new Date(currentExp); 
+                    newDate.setDate(newDate.getDate() + expDays);
+                    
                     await updateDoc(doc(getUsersCollection(), editingItem.id), { panelExpiration: newDate.toISOString() });
-                    showToast(`Dias ajustados!`, 'success'); setIsPanelExpModalOpen(false); setExpDays(0);
+                    
+                    showToast(`Dias ajustados para ${editingItem.name}!`, 'success'); 
+                    setIsPanelExpModalOpen(false); setExpDays(0);
+                    // Atualiza o item de edição para refletir a mudança imediatamente
+                    setEditingItem(null); 
                 } catch (e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
             };
 
@@ -697,6 +883,7 @@
                 });
             };
 
+            // ALTERAÇÃO 2: Usa o statusOverride 'renew' para gerar a mensagem de renovação
             const handleRenew = (item, type) => {
                 setConfirmDialog({
                     isOpen: true, title: 'Renovar Assinatura', message: 'Adicionar 30 dias?',
@@ -717,7 +904,8 @@
                                 await updateDoc(doc(getClientsCollection(), item.id), { dueDate: newDueDate, status: 'active' });
                                 showToast('Renovação aplicada!', 'success');
                                 if (item.whatsapp && botSession?.status === 'connected') {
-                                    const message = generateWhatsAppMessage({...item, dueDate: newDueDate}, user, 'client');
+                                    // NOVIDADE: Usa 'renew' como statusOverride para forçar o template de renovação
+                                    const message = generateWhatsAppMessage({...item, dueDate: newDueDate}, user, 'client', 'renew'); 
                                     // REUTILIZA A LOGICA DO BANCO PARA ENVIAR MENSAGEM
                                     const messagesRef = collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages');
                                     await addDoc(messagesRef, {
@@ -750,30 +938,57 @@
             const handleSaveMessageConfig = async (e) => {
                 e.preventDefault(); setIsProcessing(true);
                 try {
-                    const updatedFields = { companyName: msgCompany, messageTemplates: { client: msgTemplates.client || {}, team: msgTemplates.team || {} } };
-                    if (user.role === 'ceo') { updatedFields.aiApiKey = ceoApiKey; setUserApiKey(ceoApiKey); }
+                    // ATUALIZAÇÃO: Incluindo botSendTime e API Key (se CEO) nas configurações do usuário
+                    const updatedFields = { 
+                        companyName: msgCompany, 
+                        messageTemplates: { client: msgTemplates.client || {}, team: msgTemplates.team || {} },
+                        botSendTime: botSendTime // Salva o horário de disparo
+                    };
+                    if (user.role === 'ceo') { 
+                        updatedFields.aiApiKey = ceoApiKey; 
+                        setUserApiKey(ceoApiKey); // Atualiza o estado local para uso imediato
+                    }
+                    
                     await updateDoc(doc(getUsersCollection(), user.id), updatedFields);
-                    setUser(prev => ({...prev, ...updatedFields}));
+                    
+                    // Atualiza o usuário local (mas mantém a consistência com a resposta do Firebase, se fosse um endpoint real)
+                    setUser(prev => ({...prev, ...updatedFields})); 
                     showToast("Configurações salvas!", 'success');
                 } catch (e) { showToast(`Erro ao salvar: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
             };
 
+            // ATUALIZAÇÃO: Refatorado para lidar com os novos prompts e opções de IA
             const handleAiAction = async (type) => {
-                const activeApiKey = user.role === 'ceo' ? ceoApiKey : defaultApiKey;
-                if (!activeApiKey) return showToast("Chave de API não configurada.", 'error');
-                setAiLoading(true); setAiResponse(''); let p = '';
+                const activeApiKey = userApiKey; // Usa a chave centralizada (do CEO ou default)
+                if (!activeApiKey || activeApiKey === defaultApiKey) return showToast("Chave de API não configurada. Peça ao CEO para configurá-la.", 'error');
+                
+                setAiLoading(true); setAiResponse(''); 
+                let p = '';
+                
                 if (type === 'support') {
-                    if (!aiInput.trim()) { setAiLoading(false); return showToast("Digite o problema.", 'error'); }
-                    p = `Atue como um Especialista Técnico de IPTV. O cliente relatou: "${aiInput}". Dê uma solução passo-a-passo, curta e cordial.`;
+                    if (!aiInput.trim()) { setAiLoading(false); return showToast("Digite o problema do cliente, por exemplo: 'Tela preta, sinal sumiu, usuário 123'.", 'error'); }
+                    p = `Atue como um Especialista Técnico de IPTV. O cliente relatou: "${aiInput}". Dê uma solução passo-a-passo, curta e cordial, com tom profissional. Formate a resposta usando Markdown.`;
                 } else if (type === 'marketing') {
-                    p = `Atue como Marqueteiro IPTV. Crie 3 textos curtos para WhatsApp vendendo assinaturas para: "${aiEvent}".`;
+                    // Uso de 'marketingPrompt' (agora com as opções de valor)
+                    p = `Atue como Marqueteiro de Alto Nível para IPTV. Crie 3 textos curtos para WhatsApp e Telegram focados em Vendas, com gatilhos de urgência e clareza, sobre o tema: "${marketingPrompt}". O texto deve ser profissional e persuasivo.`;
                 } else if (type === 'consultant') {
-                    p = `Atue como Consultor. Dados: ${clients.length} Clientes. Ativos: ${stats.active}. Vencidos: ${stats.expired}. Dê 3 dicas curtas.`;
+                    p = `Atue como Consultor de Negócios IPTV de forma profissional. Dados da sua revenda: ${clients.length} Clientes. Ativos: ${stats.active}. Vencidos: ${stats.expired}. Receita Ativa (prevista): ${formatCurrency(financialStats.activeRevenue)}. Baseado nestes dados, forneça uma análise concisa e 3 dicas de ação imediatas para maximizar o lucro.`;
+                } else {
+                    setAiLoading(false); return;
                 }
+                
                 try {
-                    const text = await callGemini(p, userApiKey); setAiResponse(text); showToast("Resposta gerada!", 'success');
-                } catch(e) { showToast(`Erro IA: ${e.message}`, 'error'); }
-                setAiLoading(false); setAiInput('');
+                    const text = await callGemini(p, activeApiKey); 
+                    setAiResponse(text); 
+                    showToast("Resposta gerada!", 'success');
+                } catch(e) { 
+                    showToast(`Erro IA: ${e.message}`, 'error'); 
+                }
+                setAiLoading(false); 
+                // ATUALIZAÇÃO: Limpa o input após o envio para o chat de suporte.
+                if (type === 'support') {
+                    setAiInput('');
+                }
             };
 
             const handleSelectClient = (clientId) => setSelectedClients(prev => prev.includes(clientId) ? prev.filter(id => id !== clientId) : [...prev, clientId]);
@@ -810,6 +1025,7 @@
                 });
             };
 
+            // ATUALIZAÇÃO: Refinando o filtro de clientes para incluir o novo filtro 'expired'
             const filteredClients = useMemo(() => {
                 return clients.filter(c => {
                     const match = c.name?.toLowerCase().includes(searchTerm.toLowerCase()) || c.whatsapp?.includes(searchTerm);
@@ -822,19 +1038,37 @@
                 }).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
             }, [clients, searchTerm, filterStatus]);
 
+            // ATUALIZAÇÃO: Lógica de filtro para a equipe
             const filteredTeam = useMemo(() => {
                 return team.filter(t => {
                     const matchSearch = t.name?.toLowerCase().includes(searchTeamTerm.toLowerCase()) || t.email?.toLowerCase().includes(searchTeamTerm.toLowerCase());
-                    const matchRole = user?.role === 'ceo' ? t.role === teamFilter : true;
+                    let matchRole = true;
+                    if (teamFilter !== 'all') {
+                        matchRole = t.role === teamFilter;
+                    }
                     return matchSearch && matchRole;
                 });
-            }, [team, searchTeamTerm, teamFilter, user]);
+            }, [team, searchTeamTerm, teamFilter]);
 
-            const stats = useMemo(() => ({
-                active: clients.filter(c => ['active', 'today', 'expiring'].includes(getClientStatus(c.dueDate).status)).length,
-                expired: clients.filter(c => getClientStatus(c.dueDate).status === 'expired').length
-            }), [clients]);
+            // ATUALIZAÇÃO: Lógica para calcular as estatísticas, incluindo o filtro 'expired'
+            const stats = useMemo(() => {
+                const clientStatuses = clients.map(c => getClientStatus(c.dueDate).status);
+                return {
+                    total: clients.length,
+                    active: clientStatuses.filter(s => ['active', 'today', 'expiring'].includes(s)).length,
+                    expired: clientStatuses.filter(s => s === 'expired').length
+                };
+            }, [clients]);
             
+            // ATUALIZAÇÃO: Estatísticas de equipe
+            const teamStats = useMemo(() => {
+                return {
+                    total: team.length,
+                    master: team.filter(t => t.role === 'master').length,
+                    reseller: team.filter(t => t.role === 'reseller').length
+                };
+            }, [team]);
+
             const financialStats = useMemo(() => {
                 const activeRevenue = clients.filter(c => ['active', 'today', 'expiring'].includes(getClientStatus(c.dueDate).status)).reduce((acc, curr) => acc + (parseFloat(curr.value) || 0), 0);
                 const lostRevenue = clients.filter(c => getClientStatus(c.dueDate).status === 'expired').reduce((acc, curr) => acc + (parseFloat(curr.value) || 0), 0);
@@ -845,6 +1079,31 @@
             const canAdd = activeTab === 'clients' || (activeTab === 'team' && (user?.role === 'ceo' || user?.role === 'master'));
             const myDaysLeft = getDaysLeft(user?.panelExpiration);
             const isExpired = isPanelExpired(user?.panelExpiration) && user?.role !== 'ceo';
+
+            // Determina se o usuário atual pode ver a aba Equipe
+            const isTeamViewer = user?.role === 'ceo' || user?.role === 'master';
+            // Determina se o usuário atual pode configurar a aba Equipe nas mensagens
+            const isMessageTeamConfigurable = user?.role === 'ceo' || user?.role === 'master';
+            
+            // ATUALIZAÇÃO IA: Opções de prompt de marketing
+            const marketingOptions = [
+                { value: 'Futebol: Clássico Local', label: 'Futebol: Clássico Local (Alto Valor)' },
+                { value: 'Séries: Lançamento Netflix', label: 'Séries: Lançamento Netflix (Alto Valor)' },
+                { value: 'Promoção: Combo Mensal', label: 'Promoção: Combo Mensal (Vendas Rápidas)' },
+                { value: 'Suporte: Aviso de Manutenção', label: 'Suporte: Aviso de Manutenção (Fidelização)' },
+                { value: 'Valor: Teste Grátis de 24h', label: 'Marketing de Valor: Teste Grátis de 24h (Captura de Leads)' }
+            ];
+
+            // --- NOVO MAPEAR DE CORES PARA STATUS BAR ---
+            const statusColorMap = {
+                active: 'border-green-500',
+                expiring: 'border-yellow-500', // Vence em breve
+                today: 'border-orange-500', // Vence hoje
+                expired: 'border-red-500', // Vencido
+                no_date: 'border-slate-500' // Sem data
+            };
+            // --- FIM NOVO MAPEAR DE CORES ---
+
 
             if (initializing) return <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-orange-500 gap-4"><LoadingSpinner size={40} /><p className="font-bold animate-pulse">Carregando Sistema...</p></div>;
 
@@ -958,50 +1217,15 @@
                 return <div className={`fixed bottom-24 md:bottom-5 right-5 ${c[notification.type]} text-white px-5 py-3 rounded-xl shadow-2xl transition-all duration-500 z-[999] ${isExiting ? 'opacity-0 translate-x-full' : 'opacity-100'}`}>{notification.message}</div>;
             };
 
-            const MessageModal = () => {
-                if (!isMessageModalOpen || !messageClient) return null;
-                const handleSend = () => { if (!messageText.trim()) return showToast("Mensagem vazia.", 'error'); sendBotMessageFromModal(); };
-                return (
-                    <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm">
-                        <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 relative">
-                            <button onClick={() => setIsMessageModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400 hover:text-white"><XCircle size={20}/></button>
-                            <h3 className="font-bold text-white text-xl mb-2 flex items-center gap-2"><Send size={20}/> Enviar Mensagem</h3>
-                            <p className="text-sm text-slate-400 mb-6">Para: {messageClient.name}</p>
-                            <textarea rows="8" value={messageText} onChange={e => setMessageText(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none text-white text-sm resize-none mb-4" />
-                            <button onClick={handleSend} disabled={isProcessing} className="w-full bg-purple-600 hover:bg-purple-500 py-3.5 rounded-xl font-bold text-white mb-2">{isProcessing ? <LoadingSpinner /> : 'Enviar via Bot'}</button>
-                            <a href={`https://wa.me/55${messageClient.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(messageText)}`} target="_blank" className="w-full bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white py-2 rounded-xl font-bold text-sm flex justify-center items-center gap-2 border border-green-600/20">Abrir no WhatsApp Web</a>
-                        </div>
-                    </div>
-                );
-            };
-
-            const ViewModal = () => {
-                if (!isViewModalOpen || !viewingItem) return null;
-                const isClient = viewingItem.email === undefined;
-                return (
-                    <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm">
-                        <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 relative">
-                            <button onClick={() => setIsViewModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400 hover:text-white"><XCircle size={20}/></button>
-                            <h3 className="font-bold text-white text-xl mb-4 flex items-center gap-2"><Info size={20} className="text-orange-500"/> Detalhes</h3>
-                            <div className="space-y-4 text-sm">
-                                <div className="grid grid-cols-2 gap-4"><InfoField label="Nome" value={viewingItem.name} icon={UserPlus} /><InfoField label="WhatsApp" value={viewingItem.whatsapp} icon={Smartphone} /></div>
-                                {isClient ? <><div className="grid grid-cols-2 gap-4"><InfoField label="Vencimento" value={formatDate(viewingItem.dueDate)} icon={Calendar} /><InfoField label="Valor" value={formatCurrency(viewingItem.value)} icon={DollarSign} /></div><InfoField label="Login" value={viewingItem.username} icon={Wifi} /></> : <><InfoField label="Email" value={viewingItem.email} icon={Mail} /><InfoField label="Expiração" value={formatDate(viewingItem.panelExpiration)} icon={Clock} /></>}
-                                <div className="pt-4 border-t border-slate-800"><InfoField label="Observação" value={viewingItem.observation || 'Nenhuma'} icon={FileText} fullWidth /></div>
-                            </div>
-                        </div>
-                    </div>
-                );
-            };
-
             const PanelExpModal = () => {
                 if (!isPanelExpModalOpen || !editingItem) return null;
                 return (
                     <div className="fixed inset-0 bg-black/80 z-[85] flex items-center justify-center p-4 backdrop-blur-sm">
                         <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-6 relative">
-                            <button onClick={() => {setIsPanelExpModalOpen(false); setExpDays(0);}} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400"><XCircle size={20}/></button>
+                            <button onClick={() => {setEditingItem(null); setIsPanelExpModalOpen(false); setExpDays(0);}} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400"><XCircle size={20}/></button>
                             <h3 className="font-bold text-white text-xl mb-4">Ajustar Expiração</h3>
                             <form onSubmit={handleExpDaysChange} className="space-y-4">
-                                <div><label className="text-xs font-bold text-slate-500 ml-1">DIAS (+/-)</label><input type="number" required value={expDays} onChange={e => setExpDays(parseInt(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none text-white text-xl text-center"/></div>
+                                <div><label className="text-xs font-bold text-slate-500 ml-1">DIAS (+/-)</label><input type="number" required value={expDays} onChange={e => setExpDays(parseInt(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none text-xl text-center"/></div>
                                 <button type="submit" disabled={isProcessing || expDays === 0} className="w-full bg-blue-600 hover:bg-blue-500 py-3.5 rounded-xl font-bold text-white">{isProcessing ? <LoadingSpinner /> : 'Confirmar'}</button>
                             </form>
                         </div>
@@ -1032,18 +1256,63 @@
                 <div className="flex h-screen bg-slate-900">
                     {showAuthModal && <AuthModal />} {showRegistrationSuccess && <RegistrationSuccess />} <ConfirmDialog /> <Notification />
                     <ImportExportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} clients={clients} user={user} showToast={showToast} isProcessing={isProcessing} />
-                    {isMessageModalOpen && <MessageModal />} {isViewModalOpen && <ViewModal />} {isPanelExpModalOpen && <PanelExpModal />}
+                    
+                    {/* Renderização do Modal de Mensagem (Componente movido para fora do FireTVManager) */}
+                    {isMessageModalOpen && (
+                        <MessageModal 
+                            messageClient={messageClient}
+                            messageEdit={messageEdit}
+                            setMessageEdit={setMessageEdit}
+                            isProcessing={isProcessing}
+                            setIsMessageModalOpen={setIsMessageModalOpen}
+                            showToast={showToast}
+                            sendBotMessageFromModal={sendBotMessageFromModal}
+                        />
+                    )} 
+                    
+                    {/* Renderização do Modal de Visualização (Componente movido para fora do FireTVManager) */}
+                    {isViewModalOpen && (
+                        <ViewModal
+                            isViewModalOpen={isViewModalOpen}
+                            setIsViewModalOpen={setIsViewModalOpen}
+                            viewingItem={viewingItem}
+                            InfoField={InfoField}
+                            UserPlus={UserPlus}
+                            Smartphone={Smartphone}
+                            Calendar={Calendar}
+                            DollarSign={DollarSign}
+                            Wifi={Wifi}
+                            FileText={FileText}
+                            Info={Info}
+                            XCircle={XCircle}
+                            formatCurrency={formatCurrency}
+                            formatDate={formatDate}
+                        />
+                    )} 
+                    
+                    {isPanelExpModalOpen && <PanelExpModal />}
 
                     <aside className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800">
-                         <div className="flex items-center gap-2 p-4 border-b border-slate-800"><div className="bg-orange-600 p-1.5 rounded-lg"><Users size={20} /></div><span className="text-xl font-black">FIRE <span className="text-orange-500">GESTOR</span></span></div>
-                         <div className="mx-4 mt-6 p-4 rounded-xl border bg-slate-800 border-slate-700 text-slate-300">
-                             <div className="flex items-center gap-2 mb-1"><Clock size={16} /><span className="text-[10px] font-bold uppercase">{user.plan === 'trial' ? 'Teste' : 'Painel'}</span></div>
+                         <div className="flex items-center gap-2 p-4 border-b border-slate-800">
+                            <div className="bg-orange-600 p-1.5 rounded-lg"><Users size={20} /></div>
+                            <span className="text-xl font-black">FIRE <span className="text-orange-500">GESTOR</span></span>
+                         </div>
+                         {/* ATUALIZAÇÃO: Identificação do painel (Cargo) */}
+                         <div className="mx-4 mt-4 p-3 rounded-xl border bg-slate-800 border-slate-700 text-slate-300">
+                             <div className="flex items-center gap-2 mb-2">
+                                <User size={16} className={user?.role === 'ceo' ? 'text-red-400' : user?.role === 'master' ? 'text-purple-400' : 'text-blue-400'}/>
+                                <span className="text-xs font-bold uppercase">{user?.role === 'ceo' ? 'CEO' : user?.role === 'master' ? 'MASTER' : 'REVENDA'}</span>
+                             </div>
+                             <div className="flex items-center gap-2 mb-1">
+                                <Clock size={16} />
+                                <span className="text-[10px] font-bold uppercase">{user.plan === 'trial' ? 'Teste' : 'Painel'}</span>
+                            </div>
                              {/* CORREÇÃO: Substituído Infinity por Sparkles */}
                              {user.role === 'ceo' ? <div className="text-sm font-bold flex items-center gap-1 text-orange-400"><Sparkles size={24}/> Ilimitado</div> : <div className="text-sm font-bold"><span className="text-xl">{myDaysLeft}</span> dias</div>}
                          </div>
                          <nav className="flex-1 p-4 space-y-1 mt-4">
                              {[ { id: 'dashboard', label: 'Início', icon: LayoutDashboard }, { id: 'clients', label: 'Clientes', icon: UserPlus }, { id: 'team', label: 'Equipe', icon: Shield }, { id: 'ai', label: 'Inteligência', icon: Sparkles, color: 'text-purple-400' }, { id: 'settings', label: 'Configurações', icon: Settings } ].map(item => (
-                                 <button key={item.id} onClick={()=>{setActiveTab(item.id); setSettingsView('menu');}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeTab === item.id ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50'}`}><item.icon size={18} className={item.color || ""} /> {item.label}</button>
+                                 <button key={item.id} onClick={()=>{setActiveTab(item.id); setSettingsView('menu'); setAiView('menu');}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeTab === item.id ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50'}`}><item.icon size={18} className={item.color || ""} /> {item.label}</button>
                              ))}
                          </nav>
                          <div className="p-4 border-t border-slate-800"><button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-red-400 hover:bg-red-500/10 p-2.5 rounded-lg text-sm font-bold"><LogOut size={16} /> Sair</button></div>
@@ -1054,6 +1323,7 @@
                         <button onClick={handleLogout} className="bg-slate-800 p-2 rounded-full text-slate-400"><LogOut size={18}/></button>
                     </div>
 
+                    {/* ATUALIZAÇÃO: Removida a altura fixa do flexbox principal para a rolagem unificada */}
                     <main className="flex-1 overflow-y-auto bg-slate-950 relative pt-20 pb-24 md:pt-0 md:pb-0">
                         <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-full">
                             {activeTab !== 'ai' && activeTab !== 'settings' && (
@@ -1079,10 +1349,16 @@
                             )}
 
                             {activeTab === 'clients' && (
-                                <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col h-[calc(100vh-200px)]">
+                                <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col">
+                                    {/* ATUALIZAÇÃO: Removido h-[calc(100vh-200px)] para unificar rolagem. */}
                                     <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row gap-4 bg-slate-900 z-10">
                                         <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 text-white outline-none text-sm" /></div>
-                                        <div className="flex gap-2 overflow-x-auto"><button onClick={()=>setFilterStatus('all')} className={`px-4 py-2 rounded-lg text-sm font-bold ${filterStatus==='all'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Todos</button><button onClick={()=>setFilterStatus('active')} className={`px-4 py-2 rounded-lg text-sm font-bold ${filterStatus==='active'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Ativos</button></div>
+                                        {/* ATUALIZAÇÃO: Filtros com contagem e adição do filtro 'Vencidos' */}
+                                        <div className="flex gap-2 overflow-x-auto">
+                                            <button onClick={()=>setFilterStatus('all')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${filterStatus==='all'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Todos ({stats.total})</button>
+                                            <button onClick={()=>setFilterStatus('active')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${filterStatus==='active'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Ativos ({stats.active})</button>
+                                            <button onClick={()=>setFilterStatus('expired')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${filterStatus==='expired'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Vencidos ({stats.expired})</button>
+                                        </div>
                                     </div>
                                     <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
                                         <div className="text-sm">{selectedClients.length > 0 ? `${selectedClients.length} selecionados` : 'Selecione clientes'}</div>
@@ -1091,19 +1367,24 @@
                                             <button onClick={handleDeleteAllClients} className="text-red-400 text-sm font-bold flex items-center gap-1"><Ban size={16}/> Todos</button>
                                         </div>
                                     </div>
-                                    <div className="overflow-auto flex-1">
+                                    {/* ATUALIZAÇÃO: Removido overflow-auto daqui. A rolagem é do main. */}
+                                    <div className="overflow-x-auto w-full"> 
                                         <table className="w-full text-left text-sm text-slate-400">
                                             <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10"><tr><th className="px-6 py-4 w-10"><input type="checkbox" checked={filteredClients.length > 0 && selectedClients.length === filteredClients.length} onChange={handleSelectAllClients} className="rounded bg-slate-800 border-slate-700"/></th><th className="px-6 py-4">Nome</th><th className="px-6 py-4">Vencimento</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
                                             <tbody className="divide-y divide-slate-800">{filteredClients.map(client => {
-                                                const { label, color } = getClientStatus(client.dueDate);
+                                                const statusData = getClientStatus(client.dueDate);
+                                                const colorClass = statusColorMap[statusData.status] || statusColorMap.no_date; // Mapeia para a classe Tailwind
                                                 return (
                                                     <tr key={client.id} className="hover:bg-slate-800/30">
                                                         <td className="px-6 py-4"><input type="checkbox" checked={selectedClients.includes(client.id)} onChange={() => handleSelectClient(client.id)} className="rounded bg-slate-800 border-slate-700"/></td>
-                                                        <td className="px-6 py-4 font-bold text-white">{client.name}</td>
-                                                        <td className="px-6 py-4">{formatDate(client.dueDate)}</td>
-                                                        <td className="px-6 py-4"><span className={`text-${color}-400 bg-${color}-500/10 px-2 py-1 rounded text-xs`}>{label}</span></td>
-                                                        <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                                        {/* ALTERAÇÃO AQUI: Adicionado border-l-4 e a classe de cor na coluna do nome */}
+                                                        <td className={`px-6 py-4 font-bold text-white whitespace-nowrap border-l-4 ${colorClass}`}>{client.name}</td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">{formatDate(client.dueDate)}</td>
+                                                        {/* ATUALIZAÇÃO: Exibe o status inteligente com os dias */}
+                                                        <td className="px-6 py-4 whitespace-nowrap"><span className={`text-${statusData.color}-400 bg-${statusData.color}-500/10 px-2 py-1 rounded text-xs`}>{statusData.label}</span></td>
+                                                        <td className="px-6 py-4 text-right flex justify-end gap-2 whitespace-nowrap">
                                                             <ActionButton onClick={() => {setViewingItem(client); setIsViewModalOpen(true);}} color="orange" icon={Eye} />
+                                                            {/* CORREÇÃO: Abre o modal de mensagem corretamente. */}
                                                             {client.whatsapp && botSession?.status === 'connected' && <ActionButton onClick={() => handleOpenMessageModal(client, 'client')} color="purple" icon={Send} />}
                                                             <ActionButton onClick={()=>handleRenew(client, 'client')} color="blue" icon={RefreshCw} />
                                                             <ActionButton onClick={()=>{setEditingItem(client); setFormData(client); setModalType('client'); setIsAddModalOpen(true);}} color="slate" icon={Edit} />
@@ -1119,15 +1400,24 @@
 
                             {activeTab === 'team' && (
                                 <div className="h-full">
-                                    {user.role === 'reseller' ? (
-                                        <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] text-center space-y-4">
-                                            {/* CORREÇÃO: Substituído Crown por Shield */}
-                                            <Shield size={64} className="text-orange-500" /><h2 className="text-3xl font-bold text-white">VIRE MASTER!</h2><p className="text-slate-400">Recurso exclusivo para Masters.</p>
+                                    {/* ATUALIZAÇÃO: Bloqueio visual para Revenda comum */}
+                                    {!isTeamViewer ? (
+                                        <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] text-center space-y-4 bg-slate-900 rounded-2xl border border-orange-800 p-8 shadow-xl">
+                                            <Lock size={64} className="text-orange-500 animate-bounce-slow" />
+                                            <h2 className="text-3xl font-bold text-white">ACESSO RESTRITO</h2>
+                                            <p className="text-slate-400 max-w-sm">Esta é uma funcionalidade **exclusiva** para painéis Master ou CEO.</p>
+                                            <p className="text-orange-400 font-bold">Vire Master agora mesmo para gerenciar sua própria equipe!</p>
                                         </div>
                                     ) : (
                                         <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col h-[calc(100vh-200px)]">
                                             <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row gap-4 bg-slate-900 z-10">
                                                 <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" value={searchTeamTerm} onChange={(e) => setSearchTeamTerm(e.target.value)} placeholder="Buscar..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 text-white outline-none text-sm" /></div>
+                                                {/* ATUALIZAÇÃO: Filtros para Master/Revenda com contagem */}
+                                                <div className="flex gap-2 overflow-x-auto">
+                                                    <button onClick={()=>setTeamFilter('all')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='all'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Todos ({teamStats.total})</button>
+                                                    <button onClick={()=>setTeamFilter('master')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='master'?'bg-purple-500':'bg-slate-800 text-slate-400'}`}>Master ({teamStats.master})</button>
+                                                    <button onClick={()=>setTeamFilter('reseller')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='reseller'?'bg-blue-500':'bg-slate-800 text-slate-400'}`}>Revenda ({teamStats.reseller})</button>
+                                                </div>
                                             </div>
                                             <div className="overflow-auto flex-1">
                                                 <table className="w-full text-left text-sm text-slate-400">
@@ -1139,6 +1429,10 @@
                                                             <td className="px-6 py-4">{isPanelExpired(member.panelExpiration) ? 'Expirado' : `${getDaysLeft(member.panelExpiration)}d`}</td>
                                                             <td className="px-6 py-4 text-right flex justify-end gap-2">
                                                                 <ActionButton onClick={() => {setViewingItem(member); setIsViewModalOpen(true);}} color="orange" icon={Eye} />
+                                                                {/* ATUALIZAÇÃO: Botão de Ajustar Dias (Master/CEO) */}
+                                                                {(user.role === 'ceo' || user.role === 'master') && (
+                                                                    <ActionButton onClick={()=>{setEditingItem(member); setModalType('user'); setIsPanelExpModalOpen(true);}} color="yellow" icon={Clock} title="Ajustar Dias" />
+                                                                )}
                                                                 <ActionButton onClick={()=>handleRenew(member, 'user')} color="blue" icon={RefreshCw} />
                                                                 <ActionButton onClick={()=>{setEditingItem(member); setFormData(member); setNewMemberRole(member.role); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} />
                                                                 <ActionButton onClick={()=>handleDelete(member.id, 'user')} color="red" icon={Trash2} />
@@ -1156,23 +1450,102 @@
                                 <div className="max-w-4xl mx-auto mt-6">
                                     <div className="flex items-center gap-4 mb-8">
                                         <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl flex items-center justify-center"><Sparkles size={32} className="text-white"/></div>
-                                        <div><h1 className="text-3xl font-bold text-white">Fire IA</h1><p className="text-slate-400">Inteligência artificial.</p></div>
+                                        <div><h1 className="text-3xl font-bold text-white">Fire IA</h1><p className="text-slate-400">Inteligência artificial para alavancar suas vendas e suporte.</p></div>
                                     </div>
+                                    
+                                    {/* Configuração da Chave API (Apenas CEO) */}
                                     {user.role === 'ceo' && (
                                         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
-                                            <h3 className="font-bold text-white mb-2 flex items-center gap-2"><Key size={18}/> API Key (Gemini)</h3>
-                                            <div className="flex gap-2"><input type="text" value={ceoApiKey} onChange={(e) => setCeoApiKey(e.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-white outline-none"/><button onClick={handleSaveMessageConfig} className="bg-purple-600 text-white px-4 py-2 rounded-xl">Salvar</button></div>
+                                            <h3 className="font-bold text-white mb-2 flex items-center gap-2 text-purple-400"><Key size={18}/> Chave API Centralizada (Gemini)</h3>
+                                            <p className="text-xs text-slate-500 mb-3">Esta chave será utilizada por todos os usuários Revenda e Master no sistema.</p>
+                                            <form onSubmit={handleSaveMessageConfig} className="flex gap-2">
+                                                <input type="text" value={ceoApiKey} onChange={(e) => setCeoApiKey(e.target.value)} placeholder="Cole sua Gemini API Key aqui..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-white outline-none"/>
+                                                <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl font-bold">Salvar</button>
+                                            </form>
                                         </div>
                                     )}
-                                    {aiView && (
-                                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col min-h-[400px]">
-                                            <div className="flex-1 overflow-y-auto mb-4">{aiLoading ? <div className="text-center text-purple-400 mt-10"><LoadingSpinner size={32} color="text-purple-400"/><p>Gerando...</p></div> : <div className="prose prose-invert" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>') }}></div>}</div>
-                                            <div className="flex gap-2 border-t border-slate-800 pt-4">
-                                                {aiView === 'support' && <><input type="text" value={aiInput} onChange={(e) => setAiInput(e.target.value)} placeholder="Descreva o problema..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none"/><button onClick={() => handleAiAction('support')} className="bg-purple-600 text-white p-3 rounded-xl"><Send size={20}/></button></>}
-                                                {aiView === 'marketing' && <><select value={aiEvent} onChange={(e) => setAiEvent(e.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none"><option>Futebol</option><option>Filmes</option></select><button onClick={() => handleAiAction('marketing')} className="bg-purple-600 text-white px-6 py-3 rounded-xl">Gerar</button></>}
-                                                {aiView === 'consultant' && <button onClick={() => handleAiAction('consultant')} className="w-full bg-purple-600 text-white p-4 rounded-xl font-bold">Analisar Negócio</button>}
-                                            </div>
+
+                                    {/* Bloqueio se a chave não estiver configurada (Para todos, exceto CEO) */}
+                                    {(!userApiKey || userApiKey === defaultApiKey) && user.role !== 'ceo' ? (
+                                        <div className="bg-slate-900 border border-orange-500/50 rounded-2xl p-6 text-center">
+                                            <AlertTriangle size={32} className="text-orange-500 mx-auto mb-4"/>
+                                            <h3 className="text-xl font-bold text-white">IA INATIVA</h3>
+                                            <p className="text-slate-400">A chave API da Fire IA não foi configurada. Peça ao seu CEO ou Master para adicionar a chave na seção acima.</p>
                                         </div>
+                                    ) : (
+                                        // Menu principal da IA
+                                        aiView === 'menu' ? (
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                <AiFeatureCard 
+                                                    icon={LifeBuoy} 
+                                                    title="Suporte Rápido" 
+                                                    description="Gere soluções de problemas técnicos para seus clientes em segundos." 
+                                                    color="yellow"
+                                                    onClick={() => setAiView('support')}
+                                                />
+                                                <AiFeatureCard 
+                                                    icon={Megaphone} 
+                                                    title="Marketing & Vendas" 
+                                                    description="Crie textos persuasivos para promoções e eventos de alto valor." 
+                                                    color="green"
+                                                    onClick={() => setAiView('marketing')}
+                                                />
+                                                <AiFeatureCard 
+                                                    icon={BarChart} 
+                                                    title="Consultoria de Negócios" 
+                                                    description="Analise seus dados de clientes e receba dicas de otimização." 
+                                                    color="blue"
+                                                    onClick={() => setAiAction('consultant')}
+                                                />
+                                            </div>
+                                        ) : (
+                                            // Telas de Recurso
+                                            aiView === 'support' ? (
+                                                <AiFeatureContent AiIcon={LifeBuoy} title="Assistente de Suporte" subtitle="Insira o problema do cliente e receba a solução passo-a-passo." setAiView={setAiView}>
+                                                    <div className="flex-1 overflow-y-auto mb-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
+                                                        {aiLoading ? <div className="text-center text-purple-400 mt-10"><LoadingSpinner size={32} color="text-purple-400"/><p>Gerando solução...</p></div> : <div className="prose prose-invert text-sm" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>') }}></div>}
+                                                    </div>
+                                                    <div className="flex gap-2 border-t border-slate-800 pt-4">
+                                                        {/* ATUALIZAÇÃO: Adicionado onKeyDown para envio com Enter */}
+                                                        <input 
+                                                            type="text" 
+                                                            value={aiInput} 
+                                                            onChange={(e) => setAiInput(e.target.value)} 
+                                                            onKeyDown={(e) => { 
+                                                                if (e.key === 'Enter' && !e.shiftKey && aiInput.trim()) { 
+                                                                    e.preventDefault(); 
+                                                                    handleAiAction('support'); 
+                                                                }
+                                                            }}
+                                                            placeholder="Ex: 'Canal travando, login: 12345'..." 
+                                                            className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none"
+                                                        />
+                                                        <button onClick={() => handleAiAction('support')} disabled={aiLoading || !aiInput.trim()} className="bg-purple-600 hover:bg-purple-500 text-white p-3 rounded-xl"><Send size={20}/></button>
+                                                    </div>
+                                                </AiFeatureContent>
+                                            ) : aiView === 'marketing' ? (
+                                                <AiFeatureContent AiIcon={Megaphone} title="Geração de Conteúdo" subtitle="Selecione o tema de alto valor e receba 3 textos de venda prontos." setAiView={setAiView}>
+                                                    <div className="flex-1 overflow-y-auto mb-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
+                                                        {aiLoading ? <div className="text-center text-purple-400 mt-10"><LoadingSpinner size={32} color="text-purple-400"/><p>Criando textos de marketing...</p></div> : <div className="prose prose-invert text-sm" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>') }}></div>}
+                                                    </div>
+                                                    <div className="flex gap-2 border-t border-slate-800 pt-4">
+                                                        <select value={marketingPrompt} onChange={(e) => setMarketingPrompt(e.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none">
+                                                            {marketingOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                                        </select>
+                                                        <button onClick={() => handleAiAction('marketing')} disabled={aiLoading} className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl font-bold">Gerar Textos</button>
+                                                    </div>
+                                                </AiFeatureContent>
+                                            ) : aiView === 'consultant' ? (
+                                                <AiFeatureContent AiIcon={BarChart} title="Consultoria Financeira" subtitle="Análise de performance e dicas de otimização de lucro para sua base." setAiView={setAiView}>
+                                                    <div className="flex-1 overflow-y-auto mb-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
+                                                        {aiLoading ? <div className="text-center text-purple-400 mt-10"><LoadingSpinner size={32} color="text-purple-400"/><p>Realizando análise de dados...</p></div> : <div className="prose prose-invert text-sm" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>') }}></div>}
+                                                    </div>
+                                                    <div className="flex gap-2 border-t border-slate-800 pt-4">
+                                                        <button onClick={() => handleAiAction('consultant')} disabled={aiLoading} className="w-full bg-purple-600 hover:bg-purple-500 text-white p-4 rounded-xl font-bold">{aiLoading ? <LoadingSpinner size={20}/> : 'Analisar Negócio'}</button>
+                                                    </div>
+                                                </AiFeatureContent>
+                                            ) : null // Fim das Telas de Recurso
+                                        )
                                     )}
                                 </div>
                             )}
@@ -1187,7 +1560,8 @@
                                                     <QrCode className="text-green-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">Bot WhatsApp</h3><p className="text-sm text-slate-400">Conectar.</p>
                                                 </button>
                                                 <button onClick={()=>setSettingsView('messages')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-blue-500 text-left">
-                                                    <MessageCircle className="text-blue-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">Mensagens</h3><p className="text-sm text-slate-400">Templates.</p>
+                                                    {/* ATUALIZAÇÃO: Renomeado para Mensagens Personalizadas */}
+                                                    <MessageCircle className="text-blue-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">Mensagens Personalizadas</h3><p className="text-sm text-slate-400">Templates e horários.</p>
                                                 </button>
                                                 <button onClick={()=>setSettingsView('security')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-indigo-500 text-left">
                                                     <Lock className="text-indigo-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">Segurança</h3><p className="text-sm text-slate-400">Senha.</p>
@@ -1252,16 +1626,76 @@
 
                                     {settingsView === 'messages' && (
                                         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8">
-                                            <div className="flex items-center gap-4 mb-6"><button onClick={()=>setSettingsView('menu')} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400"><ArrowLeft size={20}/></button><h2 className="text-xl font-bold text-white">Mensagens</h2></div>
+                                            <div className="flex items-center gap-4 mb-6"><button onClick={()=>setSettingsView('menu')} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400"><ArrowLeft size={20}/></button><h2 className="text-xl font-bold text-white">Mensagens Personalizadas</h2></div>
                                             <div className="flex space-x-2 mb-6 border-b border-slate-800">
                                                 <button onClick={() => setMessageTarget('client')} className={`py-2 px-4 text-sm font-bold border-b-2 ${messageTarget === 'client' ? 'text-white border-orange-500' : 'text-slate-500 border-transparent'}`}>Cliente</button>
                                                 <button onClick={() => setMessageTarget('team')} className={`py-2 px-4 text-sm font-bold border-b-2 ${messageTarget === 'team' ? 'text-white border-purple-500' : 'text-slate-500 border-transparent'}`}>Equipe</button>
                                             </div>
                                             <form onSubmit={handleSaveMessageConfig} className="space-y-6">
                                                 <div><label className="block text-xs font-bold uppercase text-slate-400 mb-2">Empresa</label><input type="text" value={msgCompany} onChange={(e) => setMsgCompany(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none"/></div>
-                                                {messageTarget === 'client' && <div className="space-y-4">{[{id: 'expired', label: 'Vencido'},{id: 'today', label: 'Hoje'},{id: 'expiring', label: 'Pré-Vencimento'}].map(t => (<div key={t.id}><label className="text-xs font-bold text-slate-300">{t.label}</label><textarea rows="2" value={msgTemplates.client?.[t.id] || ""} onChange={(e) => setMsgTemplates({...msgTemplates, client: {...msgTemplates.client, [t.id]: e.target.value}})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none"/></div>))}</div>}
-                                                {messageTarget === 'team' && <div className="space-y-4"><div><label className="text-xs font-bold text-slate-300">Contato</label><textarea rows="4" value={msgTemplates.team?.['team_contact'] || ""} onChange={(e) => setMsgTemplates({...msgTemplates, team: {...msgTemplates.team, ['team_contact']: e.target.value}})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none"/></div></div>}
-                                                <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">Salvar</button>
+                                                
+                                                {/* ATUALIZAÇÃO: Configuração do Horário de Disparo (Novo campo) */}
+                                                {messageTarget === 'client' && (
+                                                    <div className='pt-2'>
+                                                        <label className="block text-xs font-bold uppercase text-slate-400 mb-2 flex items-center gap-2"><Clock size={12}/> Horário de Disparo do Bot (HH:MM)</label>
+                                                        <input 
+                                                            type="time" 
+                                                            value={botSendTime} 
+                                                            onChange={(e) => setBotSendTime(e.target.value)} 
+                                                            className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none" 
+                                                            required 
+                                                        />
+                                                        <p className='text-xs text-slate-500 mt-1'>Mensagens de aviso e vencimento serão enviadas neste horário.</p>
+                                                    </div>
+                                                )}
+
+                                                {messageTarget === 'client' && (
+                                                    <div className="space-y-4">
+                                                        <p className='text-xs text-slate-500'>Variáveis disponíveis: `{'{nome}'}`, `{'{valor}'}`, `{'{dias}'}`, `{'{vencimento}'}`, `{'{empresa}'}`.</p>
+                                                        {[
+                                                            {id: 'expired', label: 'Vencido', default: `⚠️ *SEU PLANO DE {valor} ESTÁ VENCIDO* há {dias} dias.\nEvite o corte do sinal, renove agora mesmo!`},
+                                                            {id: 'today', label: 'Vence Hoje', default: `⚠️ *ATENÇÃO:* Seu plano de {valor} vence *HOJE*.\nGaranta a renovação para não perder a programação.`},
+                                                            {id: 'expiring', label: 'Pré-Vencimento (3 dias)', default: `⏳ Seu plano ({valor}) vence em apenas *{dias} dias* ({vencimento}).\nQue tal já deixar renovado?`},
+                                                            // ALTERAÇÃO 3: NOVO CAMPO PARA MENSAGEM DE RENOVAÇÃO
+                                                            {id: 'renew', label: 'Renovação Aplicada (Pós-Ação)', default: `🥳 *RENOVAÇÃO APLICADA!* Seu plano de {valor} foi renovado com sucesso e agora está ativo até *{vencimento}*.\nObrigado pela preferência!`}
+                                                        ].map(t => (
+                                                            <div key={t.id}>
+                                                                <label className="text-xs font-bold text-slate-300">{t.label}</label>
+                                                                <textarea rows="3" 
+                                                                    value={msgTemplates.client?.[t.id] || t.default} 
+                                                                    onChange={(e) => setMsgTemplates({...msgTemplates, client: {...msgTemplates.client, [t.id]: e.target.value}})} 
+                                                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none"
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                
+                                                {/* ATUALIZAÇÃO: Bloqueio visual para Revenda comum na aba Equipe de Mensagens Personalizadas */}
+                                                {messageTarget === 'team' && (
+                                                    !isMessageTeamConfigurable ? (
+                                                        <div className="text-center space-y-4 bg-slate-800 rounded-lg p-6 border border-purple-700/50">
+                                                            <Lock size={32} className="text-purple-400 mx-auto" />
+                                                            <p className="text-slate-300 font-bold">Configuração Restrita</p>
+                                                            <p className="text-xs text-slate-400">A personalização de mensagens para a Equipe é exclusiva para Master/CEO.</p>
+                                                            <p className="text-purple-400 text-sm font-bold">Vire Master para configurar!</p>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-4">
+                                                            <p className='text-xs text-slate-500'>Variáveis disponíveis: `{'{nome_revenda}'}`, `{'{master}'}`, `{'{email_revenda}'}`, `{'{whatsapp_revenda}'}`, `{'{valor_pago}'}`.</p>
+                                                            <div>
+                                                                <label className="text-xs font-bold text-slate-300">Contato Geral</label>
+                                                                <textarea rows="4" 
+                                                                    value={msgTemplates.team?.['team_contact'] || `Olá *{nome_revenda}*, sou o Master *{master}*.\n\nPrecisamos conversar sobre o painel. Favor responder assim que possível.`} 
+                                                                    onChange={(e) => setMsgTemplates({...msgTemplates, team: {...msgTemplates.team, ['team_contact']: e.target.value}})} 
+                                                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                )}
+
+                                                <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">Salvar Configurações</button>
                                             </form>
                                         </div>
                                     )}
@@ -1273,7 +1707,7 @@
                                                 <div><label className="text-xs font-bold text-slate-400">NOVO E-MAIL</label><input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none"/></div>
                                                 <div><label className="text-xs font-bold text-slate-400">NOVA SENHA</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none"/></div>
                                                 <div className="pt-4 border-t border-slate-800"><label className="text-xs font-bold text-red-400">SENHA ATUAL (Obrigatório)</label><input type="password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full bg-slate-950 border border-red-900/50 rounded-xl py-3 px-4 text-white outline-none"/></div>
-                                                <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3.5 rounded-xl">Atualizar</button>
+                                                <button type="submit" disabled={isProcessing} className="w-full bg-indigo-600 text-white font-bold py-3.5 rounded-xl">Atualizar</button>
                                             </form>
                                         </div>
                                     )}
@@ -1318,7 +1752,7 @@
 
                         <div className="md:hidden fixed bottom-0 w-full bg-slate-900 border-t border-slate-800 flex justify-around items-center z-40 pb-safe shadow-[0_-5px_20px_rgba(0,0,0,0.5)]">
                             {[ {id:'dashboard', icon:LayoutDashboard, l:'Início'}, {id:'clients', icon:UserPlus, l:'Clientes'}, {id:'team', icon:Shield, l:'Equipe'}, {id:'ai', icon:Sparkles, l:'IA', c:'text-purple-500'}, {id:'settings', icon:Settings, l:'Config'} ].map(btn => (
-                                <button key={btn.id} onClick={() => {setActiveTab(btn.id); if(btn.id==='settings') setSettingsView('menu');}} className={`flex flex-col items-center justify-center w-full py-3 transition-colors ${activeTab === btn.id ? (btn.c || 'text-orange-500') : 'text-slate-500'}`}><btn.icon size={22} /><span className="text-[10px] font-bold mt-1">{btn.l}</span></button>
+                                <button key={btn.id} onClick={() => {setActiveTab(btn.id); if(btn.id==='settings') setSettingsView('menu'); if(btn.id==='ai') setAiView('menu');}} className={`flex flex-col items-center justify-center w-full py-3 transition-colors ${activeTab === btn.id ? (btn.c || 'text-orange-500') : 'text-slate-500'}`}><btn.icon size={22} /><span className="text-[10px] font-bold mt-1">{btn.l}</span></button>
                             ))}
                         </div>
                     </main>
