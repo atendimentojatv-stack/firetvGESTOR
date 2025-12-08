@@ -241,7 +241,7 @@
                 team_contact: templates.team?.team_contact || `Olá *{nome_revenda}*, sou o Master *{master}*.\n\nPrecisamos conversar sobre o painel. Favor responder assim que possível.`,
                 panel_expiring: templates.team?.panel_expiring || `⚠️ *ATENÇÃO, {nome_revenda}!* Seu painel Revenda ({plano_revenda}) vence em *{dias_restantes} dias* ({vencimento_painel}).\n\nPor favor, entre em contato com seu Master ({master}) para renovação e evite o bloqueio.`,
                 panel_expired: templates.team?.panel_expired || `❌ *PAINEL EXPIRADO, {nome_revenda}!* Seu acesso ({plano_revenda}) está bloqueado há {dias_restantes} dias ({vencimento_painel}).\n\nContate seu Master ({master}) imediatamente para reativação.`,
-                panel_renew_success: templates.team?.panel_renew_success || `✅ *RENOVAÇÃO DE PAINEL CONCLUÍDA!* O painel de {nome_revenda} ({plano_revenda}) foi renovado e agora está ativo até *{vencimento_painel}*.\n\nObrigado pela confiança!`,
+                panel_renew_success: templates.team?.panel_renew_success || `✅ *RENOVÇÃO DE PAINEL CONCLUÍDA!* O painel de {nome_revenda} ({plano_revenda}) foi renovado e agora está ativo até *{vencimento_painel}*.\n\nObrigado pela confiança!`,
             };
 
 
@@ -1249,8 +1249,8 @@
                          <div className="flex items-center gap-2 p-4 border-b border-slate-800"><div className="bg-orange-600 p-1.5 rounded-lg"><UserPlus size={20} /></div><span className="text-xl font-black">FIRE <span className="text-orange-500">GESTOR</span></span></div>
                          <div className="mx-4 mt-4 p-3 rounded-xl border bg-slate-800 border-slate-700 text-slate-300"><div className="flex items-center gap-2 mb-2"><User size={16} className={user?.role === 'ceo' ? 'text-red-400' : user?.role === 'master' ? 'text-purple-400' : 'text-blue-400'}/><span className="text-xs font-bold uppercase">{user?.role === 'ceo' ? 'CEO' : user?.role === 'master' ? 'MASTER' : 'REVENDA'}</span></div><div className="text-sm font-bold flex items-center gap-1">{user.role === 'ceo' ? <><Sparkles size={16} className="text-orange-400"/> Ilimitado</> : <><Clock size={16}/> {getDaysLeft(user.panelExpiration)} dias</>}</div></div>
                          <nav className="flex-1 p-4 space-y-1 mt-4">
-                             {[ { id: 'dashboard', label: 'Início', icon: LayoutDashboard }, { id: 'clients', label: 'Clientes', icon: UserPlus }, { id: 'financial', label: 'Financeiro', icon: DollarSign, color: 'text-green-400' }, { id: 'team', label: 'Equipe', icon: Shield }, { id: 'ai', label: 'Inteligência', icon: Sparkles, color: 'text-purple-400' }, { id: 'settings', label: 'Configurações', icon: Settings } ].map(item => (
-                                 <button key={item.id} onClick={()=>{setActiveTab(item.id); setSettingsView('menu'); setAiView('menu');}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeTab === item.id ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50'}`}><item.icon size={18} className={item.color || ""} /> {item.label}</button>
+                             {[ { id: 'dashboard', label: 'Início', icon: LayoutDashboard }, { id: 'clients', label: 'Clientes', icon: UserPlus }, { id: 'financial', label: 'Financeiro', icon: DollarSign, color: 'text-green-400' }, { id: 'team', label: 'Equipe', icon: Shield }, { id: 'settings', label: 'Configurações', icon: Settings } ].map(item => (
+                                 <button key={item.id} onClick={()=>{setActiveTab(item.id); setSettingsView(item.id === 'settings' ? 'menu' : 'dashboard'); setAiView('menu');}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeTab === item.id ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50'}`}><item.icon size={18} className={item.color || ""} /> {item.label}</button>
                              ))}
                          </nav>
                          <div className="p-4 border-t border-slate-800"><button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-red-400 hover:bg-red-500/10 p-2.5 rounded-lg text-sm font-bold"><LogOut size={16} /> Sair</button></div>
@@ -1260,7 +1260,7 @@
 
                     <main className="flex-1 overflow-y-auto bg-slate-950 relative pt-20 pb-24 md:pt-0 md:pb-0">
                         <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-full">
-                            {activeTab !== 'ai' && activeTab !== 'settings' && (
+                            {activeTab !== 'settings' && (
                                 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                                     <div><h1 className="text-2xl md:text-3xl font-bold text-white">{activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'clients' ? 'Meus Clientes' : activeTab === 'financial' ? 'Controle Financeiro' : 'Gestão de Equipe'}</h1></div>
                                     <div className="flex items-center gap-2">
@@ -1490,109 +1490,8 @@
                                 </div>
                             )}
 
-                            {activeTab === 'ai' && (
-                                <div className="max-w-4xl mx-auto mt-6">
-                                    <div className="flex items-center gap-4 mb-8">
-                                        <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl flex items-center justify-center"><Sparkles size={32} className="text-white"/></div>
-                                        <div><h1 className="text-3xl font-bold text-white">Fire IA</h1><p className="text-slate-400">Inteligência artificial para alavancar suas vendas e suporte.</p></div>
-                                    </div>
-                                    
-                                    {/* Configuração da Chave API (Apenas CEO) */}
-                                    {user.role === 'ceo' && (
-                                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
-                                            <h3 className="font-bold text-white mb-2 flex items-center gap-2 text-purple-400"><Key size={18}/> Chave API Centralizada (Gemini)</h3>
-                                            <p className="text-xs text-slate-500 mb-3">Esta chave será utilizada por todos os usuários Revenda e Master no sistema.</p>
-                                            <form onSubmit={handleSaveMessageConfig} className="flex gap-2">
-                                                <input type="text" value={ceoApiKey} onChange={(e) => setCeoApiKey(e.target.value)} placeholder="Cole sua Gemini API Key aqui..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-white outline-none"/>
-                                                <button type="submit" disabled={isProcessing} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl font-bold">Salvar</button>
-                                            </form>
-                                        </div>
-                                    )}
-
-                                    {/* Bloqueio se a chave não estiver configurada (Para todos, exceto CEO) */}
-                                    {(!userApiKey || userApiKey === defaultApiKey) && user.role !== 'ceo' ? (
-                                        <div className="bg-slate-900 border border-orange-500/50 rounded-2xl p-6 text-center">
-                                            <AlertTriangle size={32} className="text-orange-500 mx-auto mb-4"/>
-                                            <h3 className="text-xl font-bold text-white">IA INATIVA</h3>
-                                            <p className="text-slate-400">A chave API da Fire IA não foi configurada. Peça ao seu CEO ou Master para adicionar a chave na seção acima.</p>
-                                        </div>
-                                    ) : (
-                                        // Menu principal da IA
-                                        aiView === 'menu' ? (
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                <AiFeatureCard 
-                                                    icon={LifeBuoy} 
-                                                    title="Suporte Rápido" 
-                                                    description="Gere soluções de problemas técnicos para seus clientes em segundos." 
-                                                    color="yellow"
-                                                    onClick={() => setAiView('support')}
-                                                />
-                                                <AiFeatureCard 
-                                                    icon={Megaphone} 
-                                                    title="Marketing & Vendas" 
-                                                    description="Crie textos persuasivos para promoções e eventos de alto valor." 
-                                                    color="green"
-                                                    onClick={() => setAiView('marketing')}
-                                                />
-                                                <AiFeatureCard 
-                                                    icon={BarChart} 
-                                                    title="Consultoria de Negócios" 
-                                                    description="Analise seus dados de clientes e receba dicas de otimização." 
-                                                    color="blue"
-                                                    onClick={() => handleAiAction('consultant')}
-                                                />
-                                            </div>
-                                        ) : (
-                                            // Telas de Recurso
-                                            aiView === 'support' ? (
-                                                <AiFeatureContent AiIcon={LifeBuoy} title="Assistente de Suporte" subtitle="Insira o problema do cliente e receba a solução passo-a-passo." setAiView={setAiView}>
-                                                    <div className="flex-1 overflow-y-auto mb-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
-                                                        {aiLoading ? <div className="text-center text-purple-400 mt-10"><LoadingSpinner size={32} color="text-purple-400"/><p>Gerando solução...</p></div> : <div className="prose prose-invert text-sm" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>') }}></div>}
-                                                    </div>
-                                                    <div className="flex gap-2 border-t border-slate-800 pt-4">
-                                                        {/* ATUALIZAÇÃO: Adicionado onKeyDown para envio com Enter */}
-                                                        <input 
-                                                            type="text" 
-                                                            value={aiInput} 
-                                                            onChange={(e) => setAiInput(e.target.value)} 
-                                                            onKeyDown={(e) => { 
-                                                                if (e.key === 'Enter' && !e.shiftKey && aiInput.trim()) { 
-                                                                    e.preventDefault(); 
-                                                                    handleAiAction('support'); 
-                                                                }
-                                                            }}
-                                                            placeholder="Ex: 'Canal travando, login: 12345'..." 
-                                                            className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none"
-                                                        />
-                                                        <button onClick={() => handleAiAction('support')} disabled={aiLoading || !aiInput.trim()} className="bg-purple-600 hover:bg-purple-500 text-white p-3 rounded-xl"><Send size={20}/></button>
-                                                    </div>
-                                                </AiFeatureContent>
-                                            ) : aiView === 'marketing' ? (
-                                                <AiFeatureContent AiIcon={Megaphone} title="Geração de Conteúdo" subtitle="Selecione o tema de alto valor e receba 3 textos de venda prontos." setAiView={setAiView}>
-                                                    <div className="flex-1 overflow-y-auto mb-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
-                                                        {aiLoading ? <div className="text-center text-purple-400 mt-10"><LoadingSpinner size={32} color="text-purple-400"/><p>Criando textos de marketing...</p></div> : <div className="prose prose-invert text-sm" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>') }}></div>}
-                                                    </div>
-                                                    <div className="flex gap-2 border-t border-slate-800 pt-4">
-                                                        <select value={marketingPrompt} onChange={(e) => setMarketingPrompt(e.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none">
-                                                            {marketingOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                                        </select>
-                                                        <button onClick={() => handleAiAction('marketing')} disabled={aiLoading} className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl font-bold">Gerar Textos</button>
-                                                    </div>
-                                                </AiFeatureContent>
-                                            ) : aiView === 'consultant' ? (
-                                                <AiFeatureContent AiIcon={BarChart} title="Consultoria Financeira" subtitle="Análise de performance e dicas de otimização de lucro para sua base." setAiView={setAiView}>
-                                                    <div className="flex-1 overflow-y-auto mb-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
-                                                        {aiLoading ? <div className="text-center text-purple-400 mt-10"><LoadingSpinner size={32} color="text-purple-400"/><p>Realizando análise de dados...</p></div> : <div className="prose prose-invert text-sm" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>') }}></div>}
-                                                    </div>
-                                                    <div className="flex gap-2 border-t border-slate-800 pt-4">
-                                                        <button onClick={() => handleAiAction('consultant')} disabled={aiLoading} className="w-full bg-purple-600 hover:bg-purple-500 text-white p-4 rounded-xl font-bold">{aiLoading ? <LoadingSpinner size={20}/> : 'Analisar Negócio'}</button>
-                                                    </div>
-                                                </AiFeatureContent>
-                                            ) : null // Fim das Telas de Recurso
-                                        )
-                                    )}
-                                </div>
-                            )}
+                            {/* REMOVIDA A ABA 'ai' E SUA LÓGICA DO CONTEÚDO PRINCIPAL (AGORA DENTRO DE SETTINGS) */}
+                            {/* {activeTab === 'ai' && (...) } */}
 
                             {activeTab === 'settings' && (
                                 <div className="max-w-4xl mx-auto mt-6">
@@ -1600,13 +1499,19 @@
                                         <div className="space-y-6">
                                             <h2 className="text-xl md:text-2xl font-bold text-white mb-6">Configurações</h2>
                                             <div className="grid md:grid-cols-3 gap-4">
+                                                {/* OPÇÃO 1: BOT WHATSAPP */}
                                                 <button onClick={()=>setSettingsView('bot')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-green-500 text-left">
                                                     <QrCode className="text-green-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">Bot WhatsApp</h3><p className="text-sm text-slate-400">Conectar.</p>
                                                 </button>
+                                                {/* OPÇÃO 2: IA - ASSISTENTE (NOVA POSIÇÃO) */}
+                                                <button onClick={()=>setSettingsView('ai-assistant')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-purple-500 text-left">
+                                                    <Sparkles className="text-purple-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">IA - Assistente</h3><p className="text-sm text-slate-400">Geração de conteúdo e suporte.</p>
+                                                </button>
+                                                {/* OPÇÃO 3: MENSAGENS */}
                                                 <button onClick={()=>setSettingsView('messages')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-blue-500 text-left">
-                                                    {/* ATUALIZAÇÃO: Renomeado para Mensagens Personalizadas */}
                                                     <MessageCircle className="text-blue-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">Mensagens Personalizadas</h3><p className="text-sm text-slate-400">Templates e horários.</p>
                                                 </button>
+                                                {/* OPÇÃO 4: SEGURANÇA */}
                                                 <button onClick={()=>setSettingsView('security')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-indigo-500 text-left">
                                                     <Lock className="text-indigo-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">Segurança</h3><p className="text-sm text-slate-400">Senha.</p>
                                                 </button>
@@ -1614,10 +1519,10 @@
                                         </div>
                                     )}
 
-                                    {/* --- AQUI ESTÁ A PARTE DO BOT CORRIGIDA --- */}
+                                    {/* --- TELA: BOT WHATSAPP --- */}
                                     {settingsView === 'bot' && (
                                         <div className="max-w-4xl mx-auto">
-                                            <button onClick={() => setSettingsView('menu')} className="mb-4 text-slate-400 hover:text-white flex items-center gap-2">← Voltar</button>
+                                            <button onClick={() => setSettingsView('menu')} className="mb-4 text-slate-400 hover:text-white flex items-center gap-2">← Voltar para Configurações</button>
                                             <div className="grid md:grid-cols-2 gap-6">
                                                 {/* PAINEL ESQUERDO: CONTROLE */}
                                                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center min-h-[400px]">
@@ -1667,6 +1572,112 @@
                                         </div>
                                     )}
                                     {/* --- FIM DA PARTE DO BOT NOVA --- */}
+                                    
+                                    {/* --- TELA: IA - ASSISTENTE (NOVA ABA) --- */}
+                                    {settingsView === 'ai-assistant' && (
+                                        <div className="max-w-4xl mx-auto">
+                                            <button onClick={() => setSettingsView('menu')} className="mb-4 text-slate-400 hover:text-white flex items-center gap-2">← Voltar para Configurações</button>
+                                            <div className="flex items-center gap-4 mb-8">
+                                                <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl flex items-center justify-center"><Sparkles size={32} className="text-white"/></div>
+                                                <div><h1 className="text-3xl font-bold text-white">IA - Assistente</h1><p className="text-slate-400">Inteligência artificial para alavancar suas vendas e suporte.</p></div>
+                                            </div>
+                                            
+                                            {/* Configuração da Chave API (Apenas CEO) */}
+                                            {user.role === 'ceo' && (
+                                                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6">
+                                                    <h3 className="font-bold text-white mb-2 flex items-center gap-2 text-purple-400"><Key size={18}/> Chave API Centralizada (Gemini)</h3>
+                                                    <p className="text-xs text-slate-500 mb-3">Esta chave será utilizada por todos os usuários Revenda e Master no sistema.</p>
+                                                    <form onSubmit={handleSaveMessageConfig} className="flex gap-2">
+                                                        <input type="text" value={ceoApiKey} onChange={(e) => setCeoApiKey(e.target.value)} placeholder="Cole sua Gemini API Key aqui..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-white outline-none"/>
+                                                        <button type="submit" disabled={isProcessing} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl font-bold">Salvar</button>
+                                                    </form>
+                                                </div>
+                                            )}
+
+                                            {/* Bloqueio se a chave não estiver configurada (Para todos, exceto CEO) */}
+                                            {(!userApiKey || userApiKey === defaultApiKey) && user.role !== 'ceo' ? (
+                                                <div className="bg-slate-900 border border-orange-500/50 rounded-2xl p-6 text-center">
+                                                    <AlertTriangle size={32} className="text-orange-500 mx-auto mb-4"/>
+                                                    <h3 className="text-xl font-bold text-white">IA INATIVA</h3>
+                                                    <p className="text-slate-400">A chave API da Fire IA não foi configurada. Peça ao seu CEO ou Master para adicionar a chave na seção acima.</p>
+                                                </div>
+                                            ) : (
+                                                // Conteúdo da IA
+                                                aiView === 'menu' ? (
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                        <AiFeatureCard 
+                                                            icon={LifeBuoy} 
+                                                            title="Suporte Rápido" 
+                                                            description="Gere soluções de problemas técnicos para seus clientes em segundos." 
+                                                            color="yellow"
+                                                            onClick={() => setAiView('support')}
+                                                        />
+                                                        <AiFeatureCard 
+                                                            icon={Megaphone} 
+                                                            title="Marketing & Vendas" 
+                                                            description="Crie textos persuasivos para promoções e eventos de alto valor." 
+                                                            color="green"
+                                                            onClick={() => setAiView('marketing')}
+                                                        />
+                                                        <AiFeatureCard 
+                                                            icon={BarChart} 
+                                                            title="Consultoria de Negócios" 
+                                                            description="Analise seus dados de clientes e receba dicas de otimização." 
+                                                            color="blue"
+                                                            onClick={() => handleAiAction('consultant')}
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    // Telas de Recurso da IA
+                                                    aiView === 'support' ? (
+                                                        <AiFeatureContent AiIcon={LifeBuoy} title="Assistente de Suporte" subtitle="Insira o problema do cliente e receba a solução passo-a-passo." setAiView={setAiView}>
+                                                            <div className="flex-1 overflow-y-auto mb-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
+                                                                {aiLoading ? <div className="text-center text-purple-400 mt-10"><LoadingSpinner size={32} color="text-purple-400"/><p>Gerando solução...</p></div> : <div className="prose prose-invert text-sm" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>') }}></div>}
+                                                            </div>
+                                                            <div className="flex gap-2 border-t border-slate-800 pt-4">
+                                                                <input 
+                                                                    type="text" 
+                                                                    value={aiInput} 
+                                                                    onChange={(e) => setAiInput(e.target.value)} 
+                                                                    onKeyDown={(e) => { 
+                                                                        if (e.key === 'Enter' && !e.shiftKey && aiInput.trim()) { 
+                                                                            e.preventDefault(); 
+                                                                            handleAiAction('support'); 
+                                                                        }
+                                                                    }}
+                                                                    placeholder="Ex: 'Canal travando, login: 12345'..." 
+                                                                    className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none"
+                                                                />
+                                                                <button onClick={() => handleAiAction('support')} disabled={aiLoading || !aiInput.trim()} className="bg-purple-600 hover:bg-purple-500 text-white p-3 rounded-xl"><Send size={20}/></button>
+                                                            </div>
+                                                        </AiFeatureContent>
+                                                    ) : aiView === 'marketing' ? (
+                                                        <AiFeatureContent AiIcon={Megaphone} title="Geração de Conteúdo" subtitle="Selecione o tema de alto valor e receba 3 textos de venda prontos." setAiView={setAiView}>
+                                                            <div className="flex-1 overflow-y-auto mb-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
+                                                                {aiLoading ? <div className="text-center text-purple-400 mt-10"><LoadingSpinner size={32} color="text-purple-400"/><p>Criando textos de marketing...</p></div> : <div className="prose prose-invert text-sm" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>') }}></div>}
+                                                            </div>
+                                                            <div className="flex gap-2 border-t border-slate-800 pt-4">
+                                                                <select value={marketingPrompt} onChange={(e) => setMarketingPrompt(e.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none">
+                                                                    {marketingOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                                                </select>
+                                                                <button onClick={() => handleAiAction('marketing')} disabled={aiLoading} className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl font-bold">Gerar Textos</button>
+                                                            </div>
+                                                        </AiFeatureContent>
+                                                    ) : aiView === 'consultant' ? (
+                                                        <AiFeatureContent AiIcon={BarChart} title="Consultoria Financeira" subtitle="Análise de performance e dicas de otimização de lucro para sua base." setAiView={setAiView}>
+                                                            <div className="flex-1 overflow-y-auto mb-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
+                                                                {aiLoading ? <div className="text-center text-purple-400 mt-10"><LoadingSpinner size={32} color="text-purple-400"/><p>Realizando análise de dados...</p></div> : <div className="prose prose-invert text-sm" dangerouslySetInnerHTML={{ __html: aiResponse.replace(/\n/g, '<br/>') }}></div>}
+                                                            </div>
+                                                            <div className="flex gap-2 border-t border-slate-800 pt-4">
+                                                                <button onClick={() => handleAiAction('consultant')} disabled={aiLoading} className="w-full bg-purple-600 hover:bg-purple-500 text-white p-4 rounded-xl font-bold">{aiLoading ? <LoadingSpinner size={20}/> : 'Analisar Negócio'}</button>
+                                                            </div>
+                                                        </AiFeatureContent>
+                                                    ) : null // Fim das Telas de Recurso
+                                                )
+                                            )}
+                                        </div>
+                                    )}
+                                    {/* --- FIM DA TELA: IA - ASSISTENTE --- */}
 
                                     {settingsView === 'messages' && (
                                         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8">
@@ -1808,13 +1819,13 @@
                             ))}
                         </div>
                         
-                        {/* Botão Flutuante de Ação (FAB) para IA */}
-                        <button 
+                        {/* Botão Flutuante de Ação (FAB) para IA - Removido conforme solicitação */}
+                        {/* <button 
                             onClick={() => {setActiveTab('ai'); setAiView('menu');}} 
                             className="md:hidden fixed bottom-28 right-5 bg-purple-600 hover:bg-purple-500 p-4 rounded-full text-white shadow-xl shadow-purple-900/50 transition-all z-50 animate-pulse-slow"
                         >
                             <Sparkles size={24} />
-                        </button>
+                        </button> */}
 
                     </main>
                 </div>
