@@ -500,14 +500,14 @@
             <section className="py-16 md:py-24 bg-slate-950 relative z-10">
                 <div className="max-w-7xl mx-auto px-4">
                     <h2 className="text-3xl md:text-4xl font-black text-white text-center mb-4">O que o Fire Gestor <span className="text-orange-500">Tem?</span></h2>
-                    <p className="text-lg text-slate-400 text-center max-w-3xl mx-auto mb-12">Automação completa para você escalar seu negócio IPTV.</p>
+                    <p className="text-lg text-slate-400 text-center max-w-3xl mx-auto mb-12">Automação completa para você escalar seu negócio.</p>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <FeatureCard icon={Send} title="Bot WhatsApp Cobrança" description="Envie mensagens de cobrança e renovação automáticas." color="purple" />
                         <FeatureCard icon={UserPlus} title="Gestão Inteligente" description="Controle vencimentos, valores e status (Ativo/Vencido)." color="orange" />
                         <FeatureCard icon={Wallet} title="Financeiro Completo" description="Controle total de entradas, saídas e fluxo de caixa." color="green" />
                         <FeatureCard icon={Shield} title="Gerenciamento de Equipe" description="Crie contas Master e Revenda e gerencie sua equipe." color="blue" />
                         <FeatureCard icon={Sparkles} title="Assistente de IA" description="Gere textos de marketing e suporte técnico." color="indigo" />
-                        <FeatureCard icon={Lock} title="Segurança e Controle" description="Autenticação Firebase segura e dados na nuvem." color="red" />
+                        <FeatureCard icon={Lock} title="Segurança e Controle" description="Autenticação Firedados segura e dados na nuvem." color="red" />
                     </div>
                 </div>
             </section>
@@ -519,8 +519,8 @@
                     <h2 className="text-3xl md:text-4xl font-black text-white text-center mb-4">Perguntas <span className="text-orange-500">Frequentes</span></h2>
                     <div className="space-y-4">
                         <FAQItem question="O Bot WhatsApp é pago à parte?" answer="Não. O acesso ao Bot está incluso na sua assinatura." />
-                        <FAQItem question="Quais são os níveis de acesso?" answer="CEO (total), Master (cria Revendas) e Revenda (gerencia clientes)." />
-                        <FAQItem question="Como funciona o TESTE GRÁTIS?" answer="Sua conta é ativada com o plano Trial por 7 dias automaticamente." />
+                        <FAQItem question="Quais são os níveis de acesso?" answer="Master (cria Revendas) e Revenda (gerencia clientes)." />
+                        <FAQItem question="Como funciona o TESTE GRÁTIS?" answer="Sua conta é ativada com o plano Trial por 7 dias automaticamente apos isso deve ser efetuado o pagamento para efetivar o painel." />
                     </div>
                 </div>
             </section>
@@ -596,9 +596,9 @@
             return (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl shadow-2xl flex flex-col">
-                        <div className="p-5 border-b border-slate-800 flex justify-between items-center"><h2 className="font-bold text-white text-lg flex items-center gap-2"><FileText size={20}/> Importar / Exportar</h2><button onClick={onClose}><X size={18}/></button></div>
+                        <div className="p-5 border-b border-slate-800 flex justify-between items-center"><h2 className="font-bold text-white text-lg flex items-center gap-2"><FileText size={20}/>  Exportar/ Importar</h2><button onClick={onClose}><X size={18}/></button></div>
                         <div className="p-6 h-[400px] overflow-y-auto">
-                            {step === 1 && (<div className="space-y-4 text-center"><button onClick={() => {}} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg">Exportar CSV</button><div className="border-t border-slate-800 my-6"></div><label className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg cursor-pointer block">Selecionar CSV<input type="file" accept=".csv" className="hidden" onChange={handleFileRead} /></label></div>)}
+                            {step === 1 && (<div className="space-y-4 text-center"><button onClick={() => {}} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg">Exportar .CSV</button><div className="border-t border-slate-800 my-6"></div><label className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg cursor-pointer block">Importar .CSV<input type="file" accept=".csv" className="hidden" onChange={handleFileRead} /></label></div>)}
                             {step === 2 && (<div className="space-y-3"><h3 className="font-bold text-white text-sm">Vincule as Colunas</h3>{[ {id: 'name', label: 'Nome'}, {id: 'dueDate', label: 'Vencimento'} ].map(field => (<div key={field.id}><label>{field.label}</label><select value={mapping[field.id]} onChange={(e) => setMapping({...mapping, [field.id]: e.target.value})} className="bg-slate-900 border border-slate-700 w-full p-2 rounded"><option value="">-- Ignorar --</option>{csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}</select></div>))}<button onClick={processImport} disabled={isProcessing} className="w-full bg-green-600 text-white font-bold py-2 rounded-lg mt-2">Confirmar</button></div>)}
                             {step === 3 && (<div className="text-center h-full flex flex-col justify-center items-center"><LoadingSpinner size={40} /><p className="text-white mt-4">Importando...</p></div>)}
                         </div>
@@ -1214,7 +1214,7 @@
             const Notification = () => { if (!notification.show) return null; setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 3000); return <div className={`fixed bottom-24 md:bottom-5 right-5 ${notification.type==='error'?'bg-red-600':'bg-emerald-600'} text-white px-5 py-3 rounded-xl shadow-2xl z-[999] animate-slide-in`}>{notification.message}</div>; };
             const PanelExpModal = () => { if (!isPanelExpModalOpen) return null; return (<div className="fixed inset-0 bg-black/80 z-[85] flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-6 relative"><button onClick={() => setIsPanelExpModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400"><XCircle size={20}/></button><h3 className="font-bold text-white text-xl mb-4">Ajustar Expiração</h3><form onSubmit={handleExpDaysChange} className="space-y-4"><div><label className="text-xs font-bold text-slate-500 ml-1">DIAS (+/-)</label><input type="number" required value={expDays} onChange={e => setExpDays(parseInt(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white text-xl text-center"/></div><button type="submit" disabled={isProcessing} className="w-full bg-blue-600 hover:bg-blue-500 py-3.5 rounded-xl font-bold text-white">{isProcessing ? <LoadingSpinner /> : 'Confirmar'}</button></form></div></div>); };
 
-            if (view === 'landing') return (<div className="min-h-screen bg-slate-950 relative overflow-hidden"><div className="absolute inset-0 bg-grid-slate-800/10"></div><div className="relative z-10 pt-20 pb-20 text-center max-w-7xl mx-auto px-4"><h1 className="text-4xl md:text-6xl font-black text-white mb-4">Gerencie seu IPTV<br/> com <span className="text-orange-500">Inteligência</span></h1><div className="flex justify-center gap-4 mt-8"><button onClick={() => { setAuthType('register'); setShowAuthModal(true); }} className="bg-orange-600 text-white font-bold text-lg px-8 py-4 rounded-xl">TESTE GRÁTIS</button><button onClick={() => { setAuthType('login'); setShowAuthModal(true); }} className="text-slate-300 font-bold text-lg px-8 py-4 rounded-xl hover:bg-slate-800">Entrar</button></div></div><FeaturesSection /><FAQSection />{showAuthModal && <AuthModal />}
+            if (view === 'landing') return (<div className="min-h-screen bg-slate-950 relative overflow-hidden"><div className="absolute inset-0 bg-grid-slate-800/10"></div><div className="relative z-10 pt-20 pb-20 text-center max-w-7xl mx-auto px-4"><h1 className="text-4xl md:text-6xl font-black text-white mb-4">Gerencie seus CLIENTES<br/> com <span className="text-orange-500">Inteligência</span></h1><div className="flex justify-center gap-4 mt-8"><button onClick={() => { setAuthType('register'); setShowAuthModal(true); }} className="bg-orange-600 text-white font-bold text-lg px-8 py-4 rounded-xl">TESTE GRÁTIS 7 DIAS</button><button onClick={() => { setAuthType('login'); setShowAuthModal(true); }} className="text-slate-300 font-bold text-lg px-8 py-4 rounded-xl hover:bg-slate-800">Entrar Tenho Conta</button></div></div><FeaturesSection /><FAQSection />{showAuthModal && <AuthModal />}
             {/* NOVO MODAL DE SUCESSO COM INSTRUÇÕES DETALHADAS */}
             {showRegistrationSuccess && <RegistrationSuccessModal setShowRegistrationSuccess={setShowRegistrationSuccess} />}
             </div>);
@@ -1264,7 +1264,7 @@
                                 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                                     <div><h1 className="text-2xl md:text-3xl font-bold text-white">{activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'clients' ? 'Meus Clientes' : activeTab === 'financial' ? 'Controle Financeiro' : 'Gestão de Equipe'}</h1></div>
                                     <div className="flex items-center gap-2">
-                                        {activeTab === 'clients' && <button onClick={() => setIsImportModalOpen(true)} className="bg-slate-800 px-4 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm"><FileText size={18} /> Importar</button>}
+                                        {activeTab === 'clients' && <button onClick={() => setIsImportModalOpen(true)} className="bg-slate-800 px-4 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm"><FileText size={18} />  Exportar / Importar</button>}
                                         {/* BOTÃO PARA FINANCEIRO */}
                                         {activeTab === 'financial' && <button onClick={() => { setIsTransactionModalOpen(true); setEditingItem(null); setTransactionFormData({ description: '', amount: '', type: 'income', date: new Date().toISOString().split('T')[0], category: 'Mensalidade' }); }} className="bg-green-600 px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm hover:bg-green-500"><Plus size={20} /> Nova Transação</button>}
                                         {canAdd && activeTab !== 'financial' && <button onClick={() => { setModalType(activeTab === 'clients' ? 'client' : 'user'); setIsAddModalOpen(true); }} className="bg-orange-600 px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm"><Plus size={20} /> Novo</button>}
@@ -1452,7 +1452,7 @@
                             {activeTab === 'team' && (
                                 <div className="h-full">
                                     {!isTeamViewer ? (
-                                        <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] text-center space-y-4 bg-slate-900 rounded-2xl border border-orange-800 p-8 shadow-xl"><Lock size={64} className="text-orange-500 animate-bounce-slow" /><h2 className="text-3xl font-bold text-white">ACESSO RESTRITO</h2><p className="text-slate-400 max-w-sm">Esta é uma funcionalidade **exclusiva** para painéis Master ou CEO.</p></div>
+                                        <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] text-center space-y-4 bg-slate-900 rounded-2xl border border-orange-800 p-8 shadow-xl"><Lock size={64} className="text-orange-500 animate-bounce-slow" /><h2 className="text-3xl font-bold text-white">ACESSO RESTRITO</h2><p className="text-slate-400 max-w-sm">Esta é uma funcionalidade EXCLUSIVA para painéis MASTER, Se torne master agora mesmo chamando o CEO no WhatsApp.</p></div>
                                     ) : (
                                         <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col h-[calc(100vh-200px)]">
                                             <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row gap-4 bg-slate-900 z-10"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" value={searchTeamTerm} onChange={(e) => setSearchTeamTerm(e.target.value)} placeholder="Buscar..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 text-white outline-none text-sm" /></div><div className="flex gap-2 overflow-x-auto"><button onClick={()=>setTeamFilter('all')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='all'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Todos</button><button onClick={()=>setTeamFilter('master')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='master'?'bg-purple-500':'bg-slate-800 text-slate-400'}`}>Master</button><button onClick={()=>setTeamFilter('reseller')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='reseller'?'bg-blue-500':'bg-slate-800 text-slate-400'}`}>Revenda</button></div></div>
@@ -1732,7 +1732,7 @@
                                                         <div className="text-center space-y-4 bg-slate-800 rounded-lg p-6 border border-purple-700/50">
                                                             <Lock size={32} className="text-purple-400 mx-auto" />
                                                             <p className="text-slate-300 font-bold">Configuração Restrita</p>
-                                                            <p className="text-xs text-slate-400">A personalização de mensagens para a Equipe é exclusiva para Master/CEO.</p>
+                                                            <p className="text-xs text-slate-400">A personalização de mensagens para a Equipe é exclusiva para Master, Vire MASTER agora mesmo chamando o CEO no WhatsApp.</p>
                                                             <p className="text-purple-400 text-sm font-bold">Vire Master para configurar!</p>
                                                         </div>
                                                     ) : (
