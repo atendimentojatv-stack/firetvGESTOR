@@ -2,6 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
+    <!-- CORREÇÃO: Meta viewport mantida com settings para máxima compatibilidade mobile -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>FIRE GESTOR - Sistema IPTV + Bot + Financeiro</title>
     
@@ -28,7 +29,8 @@
                     keyframes: {
                         fadeIn: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
                         slideIn: { '0%': { transform: 'translateX(100%)' }, '100%': { transform: 'translateX(0)' } },
-                        glow: { '0%': { boxShadow: '0 0 20px rgba(249, 115, 22, 0.5)' }, '100%': { boxShadow: '0 0 40px rgba(249, 115, 22, 0.8), 0 0 10px rgba(255,255,255,0.5)' } },
+                        glow: { '0%': { boxShadow: '0 0 20px rgba(249, 115, 22, 0.5)' }, '100%': { boxShadow: '0 0 40px rgba(249, 115, 22, 0.8), 0 0 10px rgba(255,255,255,0.5)' } }
+                        ,
                         'pulse-custom': { '0%, 100%': { opacity: '1', boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.7)' }, '50%': { opacity: '0.8', boxShadow: '0 0 0 10px rgba(16, 185, 129, 0)' } }
                     }
                 }
@@ -349,12 +351,15 @@
                                 <CheckCircle size={40} className="text-green-400" />
                             </div>
                             
-                            <h2 className="text-3xl font-black text-white mb-2">SUCESSO! Ativação Pendente</h2>
-                            <p className="text-green-400 text-lg font-semibold">Seu teste GRÁTIS de 7 dias está PRONTO para começar!</p>
+                            {/* CORREÇÃO MOBILE: Reduzido o tamanho da fonte no mobile de text-3xl para text-2xl */}
+                            <h2 className="text-2xl md:text-3xl font-black text-white mb-2">SUCESSO! Ativação Pendente</h2>
+                            {/* CORREÇÃO MOBILE: Reduzido o tamanho da fonte no mobile de text-lg para text-base */}
+                            <p className="text-green-400 text-base md:text-lg font-semibold">Seu teste GRÁTIS de 7 dias está PRONTO para começar!</p>
                         </div>
 
                         <div className="bg-slate-800 p-6 rounded-xl border border-green-700 space-y-4">
-                            <p className="text-white font-bold text-center text-lg flex items-center justify-center gap-2"><Zap size={20} className="text-yellow-400"/> Passos CRUCIAIS para Iniciar:</p>
+                            {/* CORREÇÃO MOBILE: Reduzido o tamanho da fonte no mobile de text-lg para text-base */}
+                            <p className="text-white font-bold text-center text-base md:text-lg flex items-center justify-center gap-2"><Zap size={20} className="text-yellow-400"/> Passos CRUCIAIS para Iniciar:</p>
                             <ol className="list-decimal list-inside text-sm text-slate-300 space-y-3 pl-4">
                                 <li>A sua conta foi **PRÉ-CRIADA** para validação.</li>
                                 <li>Por favor, **ABRA O E-MAIL** que você cadastrou (Gmail, Outlook, etc.).</li>
@@ -364,7 +369,8 @@
                                 <li>Depois da verificação, **VOLTE** aqui no Gestor de Clientes.</li>
                                 <li>Clique em **<span className="text-orange-400 font-bold">ENTRAR</span>**, insira o E-mail e a Senha que você acabou de cadastrar.</li>
                             </ol>
-                            <p className="text-center font-bold text-lg text-green-400 pt-2">PRONTO! Desfrute do melhor gestor de clientes por 7 dias!</p>
+                            {/* CORREÇÃO MOBILE: Reduzido o tamanho da fonte no mobile de text-lg para text-base */}
+                            <p className="text-center font-bold text-base md:text-lg text-green-400 pt-2">PRONTO! Desfrute do melhor gestor de clientes por 7 dias!</p>
                         </div>
                         
                         <button onClick={() => setShowRegistrationSuccess(false)} className="mt-8 w-full bg-orange-600 hover:bg-orange-500 text-white font-bold text-lg py-4 rounded-xl transition-all shadow-lg shadow-orange-900/50">
