@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FIRE GESTOR - Sistema IPTV + Bot</title>
+    <title>FIRE GESTOR - Sistema IPTV + Bot + Financeiro</title>
     
-    <!-- FAVICON CORRIGIDO PARA O ÍCONE USER PLUS (GESTOR DE CLIENTES) LARANJA -->
+    <!-- FAVICON -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f97316' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='9' cy='7' r='4'/%3E%3Cpath d='M22 21v-2a4 4 0 0 0-3-3.87'/%3E%3Cpath d='M16 3.13a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -36,7 +36,6 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
-    <!-- VERSÃO 0.263.1 COM TRAVA DE DEPENDÊNCIA PARA ESTABILIDADE MÁXIMA -->
     <script type="importmap">
     {
       "imports": {
@@ -52,18 +51,13 @@
 
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #020617; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
-        /* OCULTA AS BARRAS DE ROLAGEM */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #475569; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
         .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
         .prose-invert h1, .prose-invert h2 { color: white; font-weight: bold; margin-bottom: 0.5em; margin-top: 1em; }
-        .prose-invert ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 1em; color: #cbd5e1; }
-        .prose-invert strong { color: #f97316; font-weight: 700; }
-        .prose-invert p { margin-bottom: 0.8em; line-height: 1.6; }
         .bg-grid-slate-800\/10 {
             background-image: linear-gradient(to right, #1e293b 1px, transparent 1px),
                               linear-gradient(to bottom, #1e293b 1px, transparent 1px);
@@ -84,12 +78,12 @@
         
         import { 
             Users, LayoutDashboard, LogOut, Plus, Search, UserPlus, Shield, 
-            Trash2, Edit, CheckCircle, XCircle, Calendar, Zap, TrendingUp, 
+            Trash2, Edit, CheckCircle, XCircle, Calendar, Zap, TrendingUp, TrendingDown,
             Smartphone, Settings, RefreshCw, MessageCircle, AlertTriangle, 
             DollarSign, Lock, Eye, EyeOff, Clock, Ban, Save, FileText, Info, 
             Sparkles, BarChart, ArrowLeft, Send, Mail, Key, 
             ChevronRight, Wallet, QrCode, Wifi, WifiOff, Menu, X, User,
-            Megaphone, Bot, LifeBuoy
+            Megaphone, Bot, LifeBuoy, PieChart
         } from 'lucide-react';
 
         // --- ERROR BOUNDARY ---
@@ -140,26 +134,17 @@
         
         const getUsersCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'users');
         const getClientsCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'clients');
+        const getTransactionsCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'transactions');
 
-        // --- UTILITÁRIOS (CORRIGIDO PARA FUSO HORÁRIO) ---
-        
-        // CORREÇÃO AQUI: Formatação de data manual para evitar bug de fuso horário (29 virar 28)
+        // --- UTILITÁRIOS ---
         const formatDate = (val) => { 
             try { 
                 if (!val) return '-'; 
-                
-                // Se for um Timestamp do Firebase (objeto)
-                if (typeof val === 'object' && val.toDate) {
-                    return new Intl.DateTimeFormat('pt-BR').format(val.toDate());
-                }
-                
-                // Se for STRING "YYYY-MM-DD", fazemos o split manual para garantir
+                if (typeof val === 'object' && val.toDate) return new Intl.DateTimeFormat('pt-BR').format(val.toDate());
                 if (typeof val === 'string' && val.includes('-') && val.length === 10) {
                     const [ano, mes, dia] = val.split('-');
                     return `${dia}/${mes}/${ano}`;
                 }
-
-                // Fallback
                 const date = new Date(val); 
                 return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(date); 
             } catch { return '-'; } 
@@ -169,14 +154,12 @@
         const getDaysLeft = (expirationDate) => { try { if (!expirationDate) return 0; const end = typeof expirationDate === 'object' && expirationDate.toDate ? expirationDate.toDate() : new Date(expirationDate); const now = new Date(); if (isNaN(end.getTime())) return 0; return Math.ceil((end - now) / (1000 * 60 * 60 * 24)); } catch { return 0; } };
         const isPanelExpired = (expirationDate) => { if (!expirationDate) return false; const end = typeof expirationDate === 'object' && expirationDate.toDate ? expirationDate.toDate() : new Date(expirationDate); return end < new Date(); };
 
-        // ATUALIZAÇÃO: Lógica para incluir a contagem de dias no status para clientes
         const getClientStatus = (dueDate) => {
             try {
                 if (!dueDate) return { status: 'no_date', label: 'Sem Data', color: 'slate' };
                 const today = new Date(); today.setHours(0, 0, 0, 0); 
                 const dateParts = dueDate.split('-'); 
                 if (dateParts.length !== 3) return { status: 'no_date', label: 'Data Inválida', color: 'slate' };
-                // Cria a data usando o construtor local (ano, mes-1, dia) para garantir meia-noite local
                 const due = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2])); 
                 due.setHours(0, 0, 0, 0);
                 
@@ -188,18 +171,14 @@
                     return { status: 'expired', label: `Vencido (-${absDays} dias)`, color: 'red', days: diffDays };
                 }
                 if (diffDays === 0) return { status: 'today', label: `Vence HOJE (0 dias)`, color: 'orange', days: 0 };
-                
-                // Mudei 'expiring' e 'active' para serem ATIVO e ter o detalhe dos dias
                 if (diffDays <= 3) return { status: 'expiring', label: `Ativo (Vence em ${diffDays} dias)`, color: 'yellow', days: diffDays };
                 return { status: 'active', label: `Ativo (Vence em ${diffDays} dias)`, color: 'green', days: diffDays };
             } catch (e) { return { status: 'no_date', label: 'Erro', color: 'slate' }; }
         };
 
-        // ALTERAÇÃO 1: Adicionada a lógica para o status 'renew'
         const generateWhatsAppMessage = (item, userSettings, type = 'client', statusOverride) => {
             if (!item) return "";
             const isClient = type === 'client';
-            // Usa statusOverride (como 'renew') se fornecido, senão usa o status normal
             const statusData = isClient ? getClientStatus(item.dueDate) : { status: 'team_contact', days: 0 }; 
             const status = statusOverride || statusData.status;
             const days = statusData.days;
@@ -211,13 +190,11 @@
 
             const defaultGreeting = `Olá *{nome}*, tudo bem? Aqui é do *{empresa}*.\n\n`;
             
-            // ATUALIZAÇÃO: Templates padrões com sugestões do usuário
             const clientDefaults = {
                 expired: templates.client?.expired || defaultGreeting + `⚠️ *SEU PLANO DE {valor} ESTÁ VENCIDO* há {dias} dias.\nEvite o corte do sinal, renove agora mesmo!`,
                 today: templates.client?.today || defaultGreeting + `⚠️ *ATENÇÃO:* Seu plano de {valor} vence *HOJE*.\nGaranta a renovação para não perder a programação.`,
                 expiring: templates.client?.expiring || defaultGreeting + `⏳ Seu plano ({valor}) vence em apenas *{dias} dias* ({vencimento}).\nQue tal já deixar renovado?`,
                 active: templates.client?.active || defaultGreeting + `✅ Seu plano de {valor} está ativo até *{vencimento}*.\nAgradecemos a preferência!`,
-                // NOVO TEMPLATE DE RENOVAÇÃO MANUAL
                 renew: templates.client?.renew || defaultGreeting + `🥳 *RENOVAÇÃO APLICADA!* Seu plano de {valor} foi renovado com sucesso e agora está ativo até *{vencimento}*.\nObrigado pela preferência!`,
                 no_date: defaultGreeting + `Seu plano ({valor}) está com data de vencimento pendente. Por favor, verifique.`,
                 no_status: defaultGreeting + `Seu plano ({valor}) está ativo.`
@@ -238,14 +215,13 @@
             const key = apiKey || defaultApiKey;
             if (!key) return "Chave de API não configurada.";
             try {
-                // ATUALIZAÇÃO: Usando gemini-2.5-flash-preview-09-2025 para garantir acesso ao Google Search para dados atuais (embora não usado nos prompts atuais, é boa prática)
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ "google_search": {} }] }) // Adicionado Google Search
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ "google_search": {} }] }) 
                 });
                 const data = await response.json();
-                if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text) {
+                if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
                      return data.candidates[0].content.parts[0].text;
                 }
                 return "Erro na IA: Resposta inválida ou vazia.";
@@ -257,7 +233,6 @@
         const RoleBadge = ({ role }) => {
             const roles = { ceo: { l: 'CEO', c: 'bg-red-500/20 text-red-400' }, master: { l: 'Master', c: 'bg-purple-500/20 text-purple-400' }, reseller: { l: 'Revenda', c: 'bg-blue-500/20 text-blue-400' } };
             const { l, c } = roles[role] || { l: '?', c: 'bg-slate-500/20 text-slate-400' };
-            // ATUALIZAÇÃO: Exibe a identificação visual
             return <span className={`px-2 py-0.5 text-[9px] font-bold rounded ${c}`}>{l}</span>;
         };
         const StatCard = ({ title, value, icon, color }) => (
@@ -274,7 +249,6 @@
         const InfoField = ({ label, value, icon: Icon, fullWidth, color = 'text-slate-400' }) => (
             <div className={`bg-slate-950 p-3 rounded-lg border border-slate-800 ${fullWidth ? 'col-span-2' : ''}`}>
                 <p className="text-[10px] font-bold uppercase text-slate-500 mb-1 flex items-center gap-1"><Icon size={12} className={color}/> {label}</p>
-                {/* CORREÇÃO AQUI: Adicionado style={{ whiteSpace: 'pre-wrap' }} para preservar as quebras de linha */}
                 <p className="text-white font-medium break-all" style={{ whiteSpace: 'pre-wrap' }}>{value}</p>
             </div>
         );
@@ -296,8 +270,6 @@
                 </div>
             );
         };
-        
-        // --- COMPONENTES DA FIRE IA ---
         const AiFeatureCard = ({ icon: Icon, title, description, color, onClick }) => (
             <button onClick={onClick} className={`w-full bg-slate-900 border border-slate-800 p-6 rounded-2xl transition-all hover:shadow-xl hover:shadow-${color}-900/10 hover:border-${color}-500/50 text-left`}>
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 bg-${color}-500/10 text-${color}-500`}><Icon size={24} /></div>
@@ -305,7 +277,6 @@
                 <p className="text-slate-400 text-sm">{description}</p>
             </button>
         );
-
         const AiFeatureContent = ({ type, AiIcon, title, subtitle, children, setAiView }) => (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col min-h-[400px]">
                 <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-800">
@@ -319,44 +290,20 @@
                 {children}
             </div>
         );
-        // --- FIM COMPONENTES DA FIRE IA ---
 
-        // --- COMPONENTES DE MODAL ESTÁVEIS (CORREÇÃO DO BUG DE PISCAR) ---
-
-        // O BUG DE "PISCAR" AO DIGITAR OCORRIA PORQUE ESTE COMPONENTE ERA RE-CRIADO
-        // DENTRO DA FUNÇÃO DO PAI (FireTVManager) A CADA RENDERIZAÇÃO.
-        // MOVER PARA CÁ GARANTE ESTABILIDADE E MANTÉM O FOCO DO INPUT.
+        // --- COMPONENTES DE MODAL ---
         const MessageModal = React.memo(({ messageClient, messageEdit, setMessageEdit, isProcessing, setIsMessageModalOpen, showToast, sendBotMessageFromModal }) => {
             if (!messageClient) return null;
-            const handleSend = () => { 
-                if (!messageEdit.trim()) return showToast("Mensagem vazia.", 'error'); 
-                sendBotMessageFromModal(); 
-            };
-            
-            // O useLayoutEffect garante que o foco seja aplicado antes da pintura do navegador, estabilizando a digitação.
+            const handleSend = () => { if (!messageEdit.trim()) return showToast("Mensagem vazia.", 'error'); sendBotMessageFromModal(); };
             const textareaRef = React.useRef(null);
-            useLayoutEffect(() => {
-                if (textareaRef.current) {
-                    textareaRef.current.focus();
-                    // Move o cursor para o final do texto pré-carregado
-                    textareaRef.current.setSelectionRange(messageEdit.length, messageEdit.length);
-                }
-            }, [messageClient]); // O foco é aplicado apenas quando o cliente/modal é alterado.
-
+            useLayoutEffect(() => { if (textareaRef.current) { textareaRef.current.focus(); textareaRef.current.setSelectionRange(messageEdit.length, messageEdit.length); } }, [messageClient]);
             return (
                 <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
                     <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 relative">
                         <button onClick={() => setIsMessageModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400 hover:text-white"><XCircle size={20}/></button>
                         <h3 className="font-bold text-white text-xl mb-2 flex items-center gap-2"><Send size={20}/> Enviar Mensagem</h3>
                         <p className="text-sm text-slate-400 mb-6">Para: {messageClient.name}</p>
-                        
-                        <textarea rows="8" 
-                            ref={textareaRef}
-                            value={messageEdit} 
-                            onChange={e => setMessageEdit(e.target.value)} 
-                            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none text-white text-sm resize-none mb-4 focus:ring-2 focus:ring-purple-500"
-                        />
-                        
+                        <textarea rows="8" ref={textareaRef} value={messageEdit} onChange={e => setMessageEdit(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none text-white text-sm resize-none mb-4 focus:ring-2 focus:ring-purple-500"/>
                         <button onClick={handleSend} disabled={isProcessing} className="w-full bg-purple-600 hover:bg-purple-500 py-3.5 rounded-xl font-bold text-white mb-2">{isProcessing ? <LoadingSpinner /> : 'Enviar via Bot'}</button>
                         <a href={`https://wa.me/55${messageClient.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(messageEdit)}`} target="_blank" className="w-full bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white py-2 rounded-xl font-bold text-sm flex justify-center items-center gap-2 border border-green-600/20">Abrir no WhatsApp Web</a>
                     </div>
@@ -364,7 +311,6 @@
             );
         });
 
-        // Movido para fora do componente FireTVManager por boas práticas de estabilidade
         const ViewModal = ({ isViewModalOpen, setIsViewModalOpen, viewingItem, InfoField, UserPlus, Smartphone, Calendar, DollarSign, Wifi, FileText, Info, XCircle, formatCurrency, formatDate }) => {
             if (!isViewModalOpen || !viewingItem) return null;
             const isClient = viewingItem.email === undefined;
@@ -383,9 +329,6 @@
             );
         };
 
-        // --- FIM COMPONENTES DE MODAL ESTÁVEIS ---
-
-
         const FeaturesSection = () => (
             <section className="py-16 md:py-24 bg-slate-950 relative z-10">
                 <div className="max-w-7xl mx-auto px-4">
@@ -394,10 +337,10 @@
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <FeatureCard icon={Send} title="Bot WhatsApp Cobrança" description="Envie mensagens de cobrança e renovação automáticas." color="purple" />
                         <FeatureCard icon={UserPlus} title="Gestão Inteligente" description="Controle vencimentos, valores e status (Ativo/Vencido)." color="orange" />
+                        <FeatureCard icon={Wallet} title="Financeiro Completo" description="Controle total de entradas, saídas e fluxo de caixa." color="green" />
                         <FeatureCard icon={Shield} title="Gerenciamento de Equipe" description="Crie contas Master e Revenda e gerencie sua equipe." color="blue" />
-                        <FeatureCard icon={Sparkles} title="Assistente de IA" description="Gere textos de marketing e suporte técnico." color="green" />
-                        <FeatureCard icon={Wallet} title="Visão Financeira" description="Acompanhe receita mensal ativa e perdida." color="red" />
-                        <FeatureCard icon={Lock} title="Segurança e Controle" description="Autenticação Firebase segura e dados na nuvem." color="indigo" />
+                        <FeatureCard icon={Sparkles} title="Assistente de IA" description="Gere textos de marketing e suporte técnico." color="indigo" />
+                        <FeatureCard icon={Lock} title="Segurança e Controle" description="Autenticação Firebase segura e dados na nuvem." color="red" />
                     </div>
                 </div>
             </section>
@@ -437,133 +380,60 @@
                     setCsvHeaders(headers);
                     const data = lines.slice(1).map(line => {
                         const values = line.split(delimiter).map(v => v.trim().replace(/"/g, ''));
-                        let obj = {};
-                        headers.forEach((h, i) => obj[h] = values[i] || '');
-                        return obj;
+                        let obj = {}; headers.forEach((h, i) => obj[h] = values[i] || ''); return obj;
                     });
-                    setCsvData(data);
-                    autoMapHeaders(headers);
-                    setStep(2);
+                    setCsvData(data); autoMapHeaders(headers); setStep(2);
                 };
                 reader.readAsText(file, 'UTF-8');
             };
 
             const autoMapHeaders = (headers) => {
                 let newMapping = {};
-                const nameVariations = ['nome', 'cliente', 'name'];
-                const whatsappVariations = ['whatsapp', 'celular', 'phone'];
-                const dueDateVariations = ['vencimento', 'data', 'due_date', 'duedate'];
-                const valueVariations = ['valor', 'price', 'value'];
-                const usernameVariations = ['usuario', 'login', 'username'];
-                const observationVariations = ['obs', 'observacao', 'notes'];
                 headers.forEach(h => {
                     const lh = h.toLowerCase();
-                    if (nameVariations.includes(lh) && !newMapping.name) newMapping.name = h;
-                    if (whatsappVariations.includes(lh) && !newMapping.whatsapp) newMapping.whatsapp = h;
-                    if (dueDateVariations.includes(lh) && !newMapping.dueDate) newMapping.dueDate = h;
-                    if (valueVariations.includes(lh) && !newMapping.value) newMapping.value = h;
-                    if (usernameVariations.includes(lh) && !newMapping.username) newMapping.username = h;
-                    if (observationVariations.includes(lh) && !newMapping.observation) newMapping.observation = h;
+                    if (['nome', 'cliente', 'name'].includes(lh) && !newMapping.name) newMapping.name = h;
+                    if (['whatsapp', 'celular', 'phone'].includes(lh) && !newMapping.whatsapp) newMapping.whatsapp = h;
+                    if (['vencimento', 'data', 'due_date'].includes(lh) && !newMapping.dueDate) newMapping.dueDate = h;
+                    if (['valor', 'price', 'value'].includes(lh) && !newMapping.value) newMapping.value = h;
+                    if (['usuario', 'login', 'username'].includes(lh) && !newMapping.username) newMapping.username = h;
                 });
                 setMapping(newMapping);
             };
 
             const processImport = async () => {
                 if (!mapping.name || !mapping.dueDate) return showToast("Mapeie pelo menos 'Nome' e 'Vencimento'.", 'error');
-                setStep(3);
-                const batch = writeBatch(db);
-                let count = 0;
+                setStep(3); const batch = writeBatch(db); let count = 0;
                 for (const row of csvData) {
                     const newClient = {
-                        name: row[mapping.name] || '',
-                        whatsapp: (row[mapping.whatsapp] || '').replace(/\D/g, ''),
-                        dueDate: formatDateForImport(row[mapping.dueDate]),
-                        value: parseFloat((row[mapping.value] || '0').replace(',', '.')) || 0,
-                        username: row[mapping.username] || '',
-                        observation: row[mapping.observation] || '',
-                        createdBy: user.email,
-                        createdAt: new Date().toISOString(),
-                        status: 'active'
+                        name: row[mapping.name] || '', whatsapp: (row[mapping.whatsapp] || '').replace(/\D/g, ''),
+                        dueDate: formatDateForImport(row[mapping.dueDate]), value: parseFloat((row[mapping.value] || '0').replace(',', '.')) || 0,
+                        username: row[mapping.username] || '', observation: row[mapping.observation] || '',
+                        createdBy: user.email, createdAt: new Date().toISOString(), status: 'active'
                     };
                     if (newClient.name && newClient.dueDate) {
                         const ref = doc(collection(db, 'artifacts', appId, 'public', 'data', 'clients'));
-                        batch.set(ref, newClient);
-                        count++;
-                        if (count % 499 === 0) { await batch.commit(); }
+                        batch.set(ref, newClient); count++; if (count % 499 === 0) await batch.commit();
                     }
                     setImportProgress((count / csvData.length) * 100);
                 }
-                await batch.commit();
-                showToast(`${count} clientes importados com sucesso!`, 'success');
-                onClose();
+                await batch.commit(); showToast(`${count} clientes importados!`, 'success'); onClose();
             };
 
             const formatDateForImport = (dateStr) => {
                 if (!dateStr) return null;
-                const dateOnly = dateStr.split(' ')[0].trim();
-                const parts = dateOnly.split('/');
+                const parts = dateStr.split(' ')[0].trim().split('/');
                 if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                return dateOnly; 
-            };
-
-            const exportToCSV = () => {
-                let csvContent = "data:text/csv;charset=utf-8,Nome,WhatsApp,Vencimento,Valor,Usuario,Observacao\r\n";
-                clients.forEach(client => {
-                    const row = [client.name||'', client.whatsapp||'', formatDate(client.dueDate)||'', client.value||0, client.username||'', (client.observation||'').replace(/,/g, ';')].join(",");
-                    csvContent += row + "\r\n";
-                });
-                const encodedUri = encodeURI(csvContent);
-                const link = document.createElement("a");
-                link.setAttribute("href", encodedUri);
-                link.setAttribute("download", "clientes_firegestor.csv");
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                return dateStr; 
             };
 
             return (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl shadow-2xl flex flex-col">
-                        <div className="p-5 border-b border-slate-800 flex justify-between items-center">
-                            {/* ÍCONE SEGURO USADO AQUI (FileText) */}
-                            <h2 className="font-bold text-white text-lg flex items-center gap-2"><FileText size={20}/> Importar / Exportar</h2>
-                            <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-800"><X size={18}/></button>
-                        </div>
+                        <div className="p-5 border-b border-slate-800 flex justify-between items-center"><h2 className="font-bold text-white text-lg flex items-center gap-2"><FileText size={20}/> Importar / Exportar</h2><button onClick={onClose}><X size={18}/></button></div>
                         <div className="p-6 h-[400px] overflow-y-auto">
-                            {step === 1 && (
-                                <div className="space-y-4 text-center">
-                                    <h3 className="font-bold text-white">Exportar</h3>
-                                    <button onClick={exportToCSV} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg">Exportar {clients.length} Clientes</button>
-                                    <div className="border-t border-slate-800 my-6"></div>
-                                    <h3 className="font-bold text-white">Importar</h3>
-                                    <label className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg cursor-pointer block">
-                                        Selecionar CSV
-                                        <input type="file" accept=".csv" className="hidden" onChange={handleFileRead} />
-                                    </label>
-                                </div>
-                            )}
-                            {step === 2 && (
-                                <div className="space-y-3">
-                                    <h3 className="font-bold text-white text-sm">Vincule as Colunas</h3>
-                                    {[ {id: 'name', label: 'Nome'}, {id: 'whatsapp', label: 'WhatsApp'}, {id: 'dueDate', label: 'Vencimento'}, {id: 'value', label: 'Valor'}, {id: 'username', label: 'Usuário'}, {id: 'observation', label: 'Observação'} ].map(field => (
-                                        <div key={field.id} className="flex flex-col text-left">
-                                            <label className="text-[10px] font-bold uppercase text-slate-500 mb-1">{field.label}</label>
-                                            <select value={mapping[field.id]} onChange={(e) => setMapping({...mapping, [field.id]: e.target.value})} className="bg-slate-900 border border-slate-700 text-white text-sm rounded-lg p-2 outline-none">
-                                                <option value="">-- Ignorar --</option>
-                                                {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                            </select>
-                                        </div>
-                            ))}
-                                    <button onClick={processImport} disabled={isProcessing} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg mt-2">Confirmar</button>
-                                </div>
-                            )}
-                            {step === 3 && (
-                                <div className="text-center h-full flex flex-col justify-center items-center">
-                                    <LoadingSpinner size={40} color="text-green-500" />
-                                    <h3 className="font-bold text-white mt-4">Importando...</h3>
-                                    <p className="text-xs text-slate-400 mt-2">{importProgress.toFixed(0)}% concluído</p>
-                                </div>
-                            )}
+                            {step === 1 && (<div className="space-y-4 text-center"><button onClick={() => {}} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg">Exportar CSV</button><div className="border-t border-slate-800 my-6"></div><label className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg cursor-pointer block">Selecionar CSV<input type="file" accept=".csv" className="hidden" onChange={handleFileRead} /></label></div>)}
+                            {step === 2 && (<div className="space-y-3"><h3 className="font-bold text-white text-sm">Vincule as Colunas</h3>{[ {id: 'name', label: 'Nome'}, {id: 'dueDate', label: 'Vencimento'} ].map(field => (<div key={field.id}><label>{field.label}</label><select value={mapping[field.id]} onChange={(e) => setMapping({...mapping, [field.id]: e.target.value})} className="bg-slate-900 border border-slate-700 w-full p-2 rounded"><option value="">-- Ignorar --</option>{csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}</select></div>))}<button onClick={processImport} disabled={isProcessing} className="w-full bg-green-600 text-white font-bold py-2 rounded-lg mt-2">Confirmar</button></div>)}
+                            {step === 3 && (<div className="text-center h-full flex flex-col justify-center items-center"><LoadingSpinner size={40} /><p className="text-white mt-4">Importando...</p></div>)}
                         </div>
                     </div>
                 </div>
@@ -580,7 +450,6 @@
             const [showAuthModal, setShowAuthModal] = useState(false);
             const [showRegistrationSuccess, setShowRegistrationSuccess] = useState(false);
             const [authType, setAuthType] = useState('login');
-            // ATUALIZAÇÃO: Adicionado 'expired' como filtro de status
             const [filterStatus, setFilterStatus] = useState('all'); 
             const [searchTerm, setSearchTerm] = useState('');
             const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -590,13 +459,11 @@
             const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
             const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
             const [isProcessing, setIsProcessing] = useState(false);
-            // ATUALIZAÇÃO: Filtro de time setado para 'all' para mostrar todos inicialmente no painel de equipe
             const [teamFilter, setTeamFilter] = useState('all');
             const [searchTeamTerm, setSearchTeamTerm] = useState('');
             const [newMemberRole, setNewMemberRole] = useState("reseller");
             const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
             const [messageClient, setMessageClient] = useState(null);
-            // ESTADO LOCAL TEMPORÁRIO PARA EDIÇÃO DENTRO DO MODAL
             const [messageEdit, setMessageEdit] = useState('');
             const [isViewModalOpen, setIsViewModalOpen] = useState(false);
             const [viewingItem, setViewingItem] = useState(null); 
@@ -606,81 +473,95 @@
             const [selectedClients, setSelectedClients] = useState([]);
             const [isImportModalOpen, setIsImportModalOpen] = useState(false);
             const [settingsView, setSettingsView] = useState('menu'); 
-            // ATUALIZAÇÃO IA: Alterado para 'menu'
             const [aiView, setAiView] = useState('menu');
             const [aiInput, setAiInput] = useState('');
             const [aiResponse, setAiResponse] = useState('');
             const [aiLoading, setAiLoading] = useState(false);
-            // ATUALIZAÇÃO IA: Opções de prompt de marketing
             const [marketingPrompt, setMarketingPrompt] = useState('Futebol: Clássico Local');
             const [userApiKey, setUserApiKey] = useState(defaultApiKey); 
             const [ceoApiKey, setCeoApiKey] = useState(defaultApiKey); 
             const [msgCompany, setMsgCompany] = useState("Fire Gestor");
-            // CORREÇÃO: Inicialização correta de msgTemplates usando useState.
             const [msgTemplates, setMsgTemplates] = useState({});
-            // ATUALIZAÇÃO: Estado para guardar o horário de disparo (apenas Revenda/Master)
             const [botSendTime, setBotSendTime] = useState("09:00"); 
             const [newEmail, setNewEmail] = useState('');
             const [newPassword, setNewPassword] = useState('');
             const [currentPassword, setCurrentPassword] = useState('');
-
-            // --- NOVO ESTADO DO BOT ---
             const [botSession, setBotSession] = useState({ status: 'disconnected', qrCode: null });
             const [clientLog, setClientLog] = useState([]); 
 
+            // --- ESTADOS DO FINANCEIRO ---
+            const [transactions, setTransactions] = useState([]);
+            const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+            const [financialFilterDate, setFinancialFilterDate] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+            const [transactionFormData, setTransactionFormData] = useState({ description: '', amount: '', type: 'income', date: new Date().toISOString().split('T')[0], category: 'Mensalidade' });
+
             const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
 
-            // --- FUNÇÕES DO BOT (AGORA USA FIREBASE) ---
-            const addLog = (msg) => {
-                const time = new Date().toLocaleTimeString();
-                setClientLog(prev => [`[${time}] ${msg}`, ...prev].slice(0, 50));
+            // --- FUNÇÕES FINANCEIRAS ---
+            const handleSaveTransaction = async (e) => {
+                e.preventDefault(); setIsProcessing(true);
+                try {
+                    const payload = {
+                        ...transactionFormData,
+                        amount: parseFloat(transactionFormData.amount) || 0,
+                        userId: user.email, // Vincula ao usuário logado
+                        createdAt: new Date().toISOString()
+                    };
+                    
+                    if (editingItem) {
+                        await updateDoc(doc(getTransactionsCollection(), editingItem.id), payload);
+                        showToast('Transação atualizada!', 'success');
+                    } else {
+                        await addDoc(getTransactionsCollection(), payload);
+                        showToast('Transação adicionada!', 'success');
+                    }
+                    setIsTransactionModalOpen(false); setTransactionFormData({ description: '', amount: '', type: 'income', date: new Date().toISOString().split('T')[0], category: 'Mensalidade' }); setEditingItem(null);
+                } catch (e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
             };
 
+            const handleDeleteTransaction = (id) => {
+                setConfirmDialog({
+                    isOpen: true, title: 'Excluir Transação?', message: 'Isso removerá o registro financeiro.',
+                    onConfirm: async () => {
+                        setIsProcessing(true);
+                        try { await deleteDoc(doc(getTransactionsCollection(), id)); showToast('Excluído!', 'success'); setConfirmDialog({ isOpen: false }); } 
+                        catch (e) { showToast('Erro ao excluir.', 'error'); } finally { setIsProcessing(false); }
+                    }
+                });
+            };
+
+            const financialSummary = useMemo(() => {
+                const filtered = transactions.filter(t => t.date.startsWith(financialFilterDate));
+                const income = filtered.filter(t => t.type === 'income').reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
+                const expense = filtered.filter(t => t.type === 'expense').reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
+                return { income, expense, balance: income - expense, history: filtered.sort((a,b) => new Date(b.date) - new Date(a.date)) };
+            }, [transactions, financialFilterDate]);
+
+            // --- FIM FUNÇÕES FINANCEIRAS ---
+
+            const addLog = (msg) => { const time = new Date().toLocaleTimeString(); setClientLog(prev => [`[${time}] ${msg}`, ...prev].slice(0, 50)); };
             const handleBotAction = async (action) => {
-                // Em vez de chamar fetch, vamos escrever no Firebase
                 addLog(`Enviando comando: ${action}...`);
                 try {
                     const docRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
-                    // Define 'start' ou 'logout' no banco. O backend (index.js) vai ler isso e agir.
-                    await setDoc(docRef, { 
-                        action: action === 'start' ? 'start' : (action === 'stop' ? 'logout' : 'force_logout'),
-                        updatedAt: serverTimestamp()
-                    }, { merge: true });
-
-                    addLog(`Comando ${action} escrito no banco.`);
-                } catch (e) {
-                    addLog(`Erro ao escrever comando: ${e.message}`);
-                    showToast("Erro no comando do bot", "error");
-                }
+                    await setDoc(docRef, { action: action === 'start' ? 'start' : (action === 'stop' ? 'logout' : 'force_logout'), updatedAt: serverTimestamp() }, { merge: true });
+                } catch (e) { addLog(`Erro: ${e.message}`); }
             };
             
-            // --- INICIALIZAÇÃO E CHAVE API CENTRALIZADA (REQUISITO) ---
             useEffect(() => {
                 const init = async () => {
                     const savedUser = localStorage.getItem('firetv_user_session');
-                    if (savedUser) {
-                        try {
-                            const u = JSON.parse(savedUser);
-                            if(u?.id) { setUser(u); setView('dashboard'); }
-                        } catch (e) { localStorage.removeItem('firetv_user_session'); }
-                    }
+                    if (savedUser) { try { const u = JSON.parse(savedUser); if(u?.id) { setUser(u); setView('dashboard'); } } catch (e) { localStorage.removeItem('firetv_user_session'); } }
                     setInitializing(false);
                 };
                 init();
-
                 const unsub = onAuthStateChanged(auth, async (u) => {
                     if (u) {
-                        if (!u.emailVerified && u.email !== 'admin@firetv.com') {
-                            if (view === 'dashboard') {
-                                await signOut(auth); localStorage.removeItem('firetv_user_session'); setUser(null); setView('landing'); showToast("Sessão expirada. Verifique seu e-mail.", "error");
-                            }
-                        } else if (!localStorage.getItem('firetv_user_session')) {
+                        if (!u.emailVerified && u.email !== 'admin@firetv.com') { if (view === 'dashboard') { await signOut(auth); localStorage.removeItem('firetv_user_session'); setUser(null); setView('landing'); } } 
+                        else if (!localStorage.getItem('firetv_user_session')) {
                             const q = query(getUsersCollection(), where('email', '==', u.email));
                             const s = await getDocs(q);
-                            if (!s.empty && s.docs[0].data().status !== 'deleted') {
-                                const uData = { id: s.docs[0].id, ...s.docs[0].data() };
-                                setUser(uData); setView('dashboard'); localStorage.setItem('firetv_user_session', JSON.stringify(uData));
-                            } else { await signOut(auth); }
+                            if (!s.empty && s.docs[0].data().status !== 'deleted') { const uData = { id: s.docs[0].id, ...s.docs[0].data() }; setUser(uData); setView('dashboard'); localStorage.setItem('firetv_user_session', JSON.stringify(uData)); } else { await signOut(auth); }
                         }
                     }
                 });
@@ -690,151 +571,79 @@
             useEffect(() => {
                 if (user) {
                     setMsgCompany(user.companyName || "Fire Gestor");
-                    const initialTemplates = user.messageTemplates || { client: {}, team: {} };
-                    if (!initialTemplates.client) initialTemplates.client = {};
-                    if (!initialTemplates.team) initialTemplates.team = {};
+                    // ATUALIZAÇÃO CRÍTICA: Inicialização segura dos templates com verificação profunda
+                    const saved = user.messageTemplates || {};
+                    const initialTemplates = { 
+                        client: saved.client || {}, 
+                        team: saved.team || {} 
+                    };
                     setMsgTemplates(initialTemplates);
-                    // ATUALIZAÇÃO: Carrega o horário de disparo do bot das configurações do usuário
                     setBotSendTime(user.botSendTime || "09:00");
                 }
             }, [user]);
             
-            // ATUALIZAÇÃO: LÓGICA DA CHAVE API CENTRALIZADA (Requisito: CEO configura, todos usam)
             useEffect(() => {
                 if (!user) return;
-                
-                if (user.role === 'ceo') {
-                    const savedKey = user.aiApiKey || defaultApiKey;
-                    setCeoApiKey(savedKey); 
-                    setUserApiKey(savedKey);
-                    return;
-                }
-                
-                // Se for Master ou Revenda, escuta o perfil do CEO para obter a chave central
+                if (user.role === 'ceo') { setCeoApiKey(user.aiApiKey || defaultApiKey); setUserApiKey(user.aiApiKey || defaultApiKey); return; }
                 const ceoQuery = query(getUsersCollection(), where('role', '==', 'ceo'));
-                const unsubCeo = onSnapshot(ceoQuery, (s) => {
-                    if (!s.empty) {
-                        const ceoData = s.docs[0].data();
-                        // Master/Revenda usa a chave salva pelo CEO, ou a chave default do código se não houver
-                        setUserApiKey(ceoData.aiApiKey || defaultApiKey); 
-                    } else {
-                        setUserApiKey(defaultApiKey);
-                    }
-                }, (err) => {
-                    console.error("Erro ao ler chave do CEO:", err);
-                    setUserApiKey(defaultApiKey);
-                });
-
+                const unsubCeo = onSnapshot(ceoQuery, (s) => { if (!s.empty) setUserApiKey(s.docs[0].data().aiApiKey || defaultApiKey); else setUserApiKey(defaultApiKey); });
                 return () => unsubCeo();
             }, [user]);
 
-            // --- LÓGICA DO BOT (AGORA USA ONSNAPSHOT DO FIREBASE) ---
             useEffect(() => {
                 if (!user?.id) return;
-                
-                // Monitora o status da conexão diretamente no Firestore
-                // Caminho: artifacts -> APP_ID -> users -> USER_ID -> bot_connection -> session
                 const docRef = doc(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'session');
-                
-                const unsubBot = onSnapshot(docRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        
-                        // Atualiza o estado local com o que está no banco
-                        if (data.status) {
-                            if (data.status !== botSession.status) {
-                                addLog(`📥 STATUS ATUALIZADO: ${data.status.toUpperCase()}`);
-                            }
-                            setBotSession(prev => ({ 
-                                ...prev, 
-                                status: data.status, 
-                                qrCode: data.qrCode || null 
-                            }));
-                        }
-                    }
-                }, (err) => {
-                    console.error("Erro ao ouvir status do bot:", err);
-                });
-
+                const unsubBot = onSnapshot(docRef, (docSnap) => { if (docSnap.exists()) { const data = docSnap.data(); setBotSession(prev => ({ ...prev, status: data.status, qrCode: data.qrCode || null })); } });
                 return () => unsubBot();
-            }, [user]); // Dependência apenas do User, para manter a conexão ativa em background se quiser
+            }, [user]);
 
-
-            const handleLogout = async () => {
-                try { await signOut(auth); localStorage.removeItem('firetv_user_session'); setUser(null); setView('landing'); window.location.reload(); } catch (e) { showToast("Erro ao sair: " + e.message, 'error'); }
-            };
+            const handleLogout = async () => { try { await signOut(auth); localStorage.removeItem('firetv_user_session'); setUser(null); setView('landing'); window.location.reload(); } catch (e) { showToast("Erro ao sair: " + e.message, 'error'); } };
 
             useEffect(() => {
                 if (!user || !user.id || view !== 'dashboard') return;
+                
+                // CORREÇÃO CRÍTICA PARA DATA FETCHING
                 const qClients = query(getClientsCollection(), where('createdBy', '==', user.email));
-                const unsubClients = onSnapshot(qClients, (s) => setClients(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubClients = onSnapshot(qClients, 
+                    (s) => setClients(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+                    (error) => { console.error("Erro Clientes:", error); } 
+                );
+                
+                const qTrans = query(getTransactionsCollection(), where('userId', '==', user.email));
+                const unsubTrans = onSnapshot(qTrans, 
+                    (s) => setTransactions(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+                    (error) => { console.error("Erro Transações:", error); }
+                );
+
                 let unsubTeam = () => {};
                 if (user.role === 'ceo') {
-                    // Se CEO, busca todos os usuários (exceto o admin padrão)
                     const qTeam = query(getUsersCollection()); 
                     unsubTeam = onSnapshot(qTeam, (s) => setTeam(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.status !== 'deleted' && u.email !== 'admin@firetv.com')));
                 } else {
                     const qTeam = query(getUsersCollection(), where('parentId', '==', user.email));
                     unsubTeam = onSnapshot(qTeam, (s) => setTeam(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.status !== 'deleted')));
                 }
-                return () => { unsubClients(); unsubTeam(); };
-            }, [user, view]);
+                return () => { unsubClients(); unsubTeam(); unsubTrans(); };
+            }, [user, view]); // Dependência em 'user' garante que se user.email atualizar (ex: login manual), a query roda de novo.
 
-            // --- LÓGICA DE MENSAGEM DO PAINEL (CLIENTES) ---
-            const handleOpenMessageModal = useCallback((client, type = 'client') => {
-                const message = generateWhatsAppMessage(client, user, type);
-                setMessageClient(client);
-                setMessageEdit(message); // Usa o novo estado local para edição
-                setIsMessageModalOpen(true);
-            }, [user]); // Depende apenas do usuário (para templates)
-
+            const handleOpenMessageModal = useCallback((client, type = 'client') => { setMessageClient(client); setMessageEdit(generateWhatsAppMessage(client, user, type)); setIsMessageModalOpen(true); }, [user]);
             const sendBotMessageFromModal = useCallback(async () => {
-                // AGORA USA messageEdit, e não messageText
                 if (!messageClient || !messageEdit) return;
                 setIsProcessing(true);
                 try {
-                    // ATUALIZADO: Agora cria um documento na coleção 'bot_messages'
-                    // O backend index.js escuta essa coleção e envia a mensagem quando vê 'status: pending'
-                    const messagesRef = collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages');
-                    
-                    await addDoc(messagesRef, {
-                        to: `55${messageClient.whatsapp.replace(/\D/g,'')}`,
-                        body: messageEdit, // Envia o texto editado localmente
-                        status: 'pending',
-                        createdAt: serverTimestamp()
-                    });
-
-                    showToast("Mensagem colocada na fila de envio!", 'success'); 
-                    setIsMessageModalOpen(false); setMessageEdit(''); // Limpa o estado local
-                } catch (e) { showToast(`Falha no envio: ${e.message}`, 'error'); }
-                finally { setIsProcessing(false); }
-            }, [messageClient, messageEdit, user, showToast, setIsMessageModalOpen, setIsProcessing, setMessageEdit]);
-            // FIM DO USECALLBACK
+                    await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), { to: `55${messageClient.whatsapp.replace(/\D/g,'')}`, body: messageEdit, status: 'pending', createdAt: serverTimestamp() });
+                    showToast("Mensagem colocada na fila!", 'success'); setIsMessageModalOpen(false); setMessageEdit('');
+                } catch (e) { showToast(`Falha no envio: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
+            }, [messageClient, messageEdit, user, showToast]);
 
             const handleExpDaysChange = async (e) => {
-                e.preventDefault();
-                // O expDays pode ser 0 se a intenção for apenas atualizar a data base para "hoje" antes de adicionar dias,
-                // mas dado o contexto do usuário, vamos forçar uma entrada válida para o ajuste manual.
-                if (!editingItem || modalType !== 'user' || expDays === 0) { 
-                    if (expDays === 0) {
-                        return showToast("Insira um número de dias diferente de zero.", 'error');
-                    }
-                    return showToast("Ajuste um número de dias válido.", 'error');
-                }
+                e.preventDefault(); if (!editingItem || expDays === 0) return showToast("Valor inválido.", 'error');
                 setIsProcessing(true);
                 try {
-                    let currentExp = new Date(editingItem.panelExpiration);
-                    // Garante que a data inicial seja hoje se estiver expirada ou for inválida
-                    if (isNaN(currentExp.getTime()) || currentExp < new Date()) currentExp = new Date(); 
-                    const newDate = new Date(currentExp); 
-                    newDate.setDate(newDate.getDate() + expDays);
-                    
+                    let currentExp = new Date(editingItem.panelExpiration); if (isNaN(currentExp.getTime()) || currentExp < new Date()) currentExp = new Date(); 
+                    const newDate = new Date(currentExp); newDate.setDate(newDate.getDate() + expDays);
                     await updateDoc(doc(getUsersCollection(), editingItem.id), { panelExpiration: newDate.toISOString() });
-                    
-                    showToast(`Dias ajustados para ${editingItem.name}!`, 'success'); 
-                    setIsPanelExpModalOpen(false); setExpDays(0);
-                    // Atualiza o item de edição para refletir a mudança imediatamente
-                    setEditingItem(null); 
+                    showToast(`Dias ajustados!`, 'success'); setIsPanelExpModalOpen(false); setExpDays(0); setEditingItem(null); 
                 } catch (e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
             };
 
@@ -842,96 +651,82 @@
                 e.preventDefault(); setIsProcessing(true);
                 try {
                     if (modalType === 'client') {
-                        const payload = { ...formData };
-                        payload.whatsapp = payload.whatsapp ? payload.whatsapp.replace(/\D/g, '') : '';
-                        payload.observation = payload.observation || ''; 
+                        const payload = { ...formData, whatsapp: formData.whatsapp?.replace(/\D/g, '') || '', observation: formData.observation || '' };
                         if (editingItem) { await updateDoc(doc(getClientsCollection(), editingItem.id), payload); showToast('Cliente editado!', 'success'); } 
                         else { await addDoc(getClientsCollection(), { ...payload, createdBy: user.email, createdAt: new Date().toISOString(), status: 'active' }); showToast('Cliente criado!', 'success'); }
                     } else {
-                        if (user.role === 'reseller' && !editingItem) throw new Error("Permissão negada.");
-                        const uPayload = { ...formData };
+                        const uPayload = { ...formData, whatsapp: formData.whatsapp?.replace(/\D/g, '') || '', valuePaid: parseFloat(formData.valuePaid) || 0, observation: formData.observation || '' };
                         if (user.role === 'ceo') uPayload.role = newMemberRole;
-                        uPayload.whatsapp = uPayload.whatsapp ? uPayload.whatsapp.replace(/\D/g, '') : ''; 
-                        uPayload.valuePaid = parseFloat(uPayload.valuePaid) || 0; 
-                        uPayload.observation = uPayload.observation || ''; 
                         if (editingItem) { await updateDoc(doc(getUsersCollection(), editingItem.id), uPayload); showToast('Revenda editada!', 'success'); } 
                         else {
-                            const qCheck = query(getUsersCollection(), where('email', '==', formData.email));
-                            const snap = await getDocs(qCheck);
-                            if (!snap.empty) throw new Error("E-mail já cadastrado.");
-                            let r = user.role === 'ceo' ? newMemberRole : 'reseller';
-                            const exp = new Date(); exp.setDate(exp.getDate() + 30);
+                            let r = user.role === 'ceo' ? newMemberRole : 'reseller'; const exp = new Date(); exp.setDate(exp.getDate() + 30);
                             await addDoc(getUsersCollection(), { ...formData, role: r, parentId: user.email, whatsapp: uPayload.whatsapp, valuePaid: uPayload.valuePaid, observation: uPayload.observation, createdAt: serverTimestamp(), status: 'active', panelExpiration: exp.toISOString(), isInvite: true, plan: 'trial' });
                             showToast('Convite criado!', 'success');
                         }
                     }
                     setIsAddModalOpen(false); setFormData({}); setEditingItem(null);
-                } catch (e) { showToast(`Erro ao salvar: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
+                } catch (e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
             };
 
             const handleDelete = (id, type) => {
                 setConfirmDialog({
-                    isOpen: true,
-                    title: type === 'user' ? 'Excluir Membro?' : 'Excluir Cliente?',
-                    message: 'Esta ação é irreversível.',
+                    isOpen: true, title: 'Excluir?', message: 'Esta ação é irreversível.',
                     onConfirm: async () => {
                         setIsProcessing(true);
-                        try {
-                            if (type === 'user') await deleteDoc(doc(getUsersCollection(), id)); else await deleteDoc(doc(getClientsCollection(), id));
-                            showToast('Removido com sucesso.', 'success'); setConfirmDialog({ isOpen: false });
-                        } catch(e) { showToast(`Erro ao excluir: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
+                        try { if (type === 'user') await deleteDoc(doc(getUsersCollection(), id)); else await deleteDoc(doc(getClientsCollection(), id)); showToast('Removido.', 'success'); setConfirmDialog({ isOpen: false }); } 
+                        catch(e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
                     }
                 });
             };
 
-            // ALTERAÇÃO 2: Usa o statusOverride 'renew' para gerar a mensagem de renovação
             const handleRenew = (item, type) => {
                 setConfirmDialog({
-                    isOpen: true, title: 'Renovar Assinatura', message: 'Adicionar 30 dias?',
+                    isOpen: true, title: 'Renovar Assinatura', 
+                    // ATUALIZAÇÃO: Mensagem mais clara indicando o lançamento financeiro
+                    message: type === 'client' ? `Renovar ${item.name} por 30 dias e lançar <b>${formatCurrency(item.value)}</b> no Financeiro?` : 'Adicionar 30 dias?',
                     onConfirm: async () => {
                         setIsProcessing(true); setConfirmDialog({ isOpen: false }); 
                         try {
                             if (type === 'user') {
-                                let e = new Date(); let currentExp = new Date(item.panelExpiration);
-                                if (!isNaN(currentExp.getTime()) && currentExp > e) e = currentExp;
-                                e.setDate(e.getDate() + 30);
+                                let e = new Date(); let currentExp = new Date(item.panelExpiration); if (!isNaN(currentExp.getTime()) && currentExp > e) e = currentExp; e.setDate(e.getDate() + 30);
                                 await updateDoc(doc(getUsersCollection(), item.id), { panelExpiration: e.toISOString(), plan: 'renewed' });
-                                showToast('Renovação aplicada!', 'success'); 
                             } else {
-                                let b = new Date(); let currentDue = new Date(item.dueDate);
-                                if (!isNaN(currentDue.getTime()) && currentDue > b) b = currentDue;
-                                b.setDate(b.getDate() + 30);
-                                const newDueDate = b.toISOString().split('T')[0];
+                                // 1. Atualizar data do cliente
+                                let b = new Date(); let currentDue = new Date(item.dueDate); if (!isNaN(currentDue.getTime()) && currentDue > b) b = currentDue; b.setDate(b.getDate() + 30); const newDueDate = b.toISOString().split('T')[0];
                                 await updateDoc(doc(getClientsCollection(), item.id), { dueDate: newDueDate, status: 'active' });
-                                showToast('Renovação aplicada!', 'success');
-                                if (item.whatsapp && botSession?.status === 'connected') {
-                                    // NOVIDADE: Usa 'renew' como statusOverride para forçar o template de renovação
-                                    const message = generateWhatsAppMessage({...item, dueDate: newDueDate}, user, 'client', 'renew'); 
-                                    // REUTILIZA A LOGICA DO BANCO PARA ENVIAR MENSAGEM
-                                    const messagesRef = collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages');
-                                    await addDoc(messagesRef, {
-                                        to: `55${item.whatsapp.replace(/\D/g,'')}`,
-                                        body: message,
-                                        status: 'pending',
-                                        createdAt: serverTimestamp()
+                                
+                                // 2. Lançar no Financeiro (AUTOMÁTICO)
+                                const transactionValue = parseFloat(item.value) || 0;
+                                if (transactionValue > 0) {
+                                    await addDoc(getTransactionsCollection(), {
+                                        description: `Renovação: ${item.name}`,
+                                        amount: transactionValue,
+                                        type: 'income',
+                                        category: 'Renovação',
+                                        date: new Date().toISOString().split('T')[0], // Data de hoje
+                                        userId: user.email,
+                                        createdAt: new Date().toISOString()
                                     });
                                 }
+
+                                // 3. Enviar mensagem
+                                if (item.whatsapp && botSession?.status === 'connected') {
+                                    const message = generateWhatsAppMessage({...item, dueDate: newDueDate}, user, 'client', 'renew'); 
+                                    await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), { to: `55${item.whatsapp.replace(/\D/g,'')}`, body: message, status: 'pending', createdAt: serverTimestamp() });
+                                }
                             }
-                        } catch(e) { showToast(`Erro na renovação: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
+                            showToast('Renovado e registrado no financeiro!', 'success');
+                        } catch(e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
                     }
                 });
             };
 
             const handleUpdateProfile = async (e) => {
                 e.preventDefault(); if (!currentPassword) return showToast("Digite sua senha atual.", 'error');
-                if (!newEmail && !newPassword) return showToast("Preencha algo para alterar.", 'error');
                 setIsProcessing(true);
                 try {
-                    const c = auth.currentUser;
-                    const cred = EmailAuthProvider.credential(c.email, currentPassword);
-                    await reauthenticateWithCredential(c, cred);
-                    if (newEmail && newEmail !== c.email) await verifyBeforeUpdateEmail(c, newEmail);
-                    if (newPassword) await updatePassword(c, newPassword);
+                    const c = auth.currentUser; await reauthenticateWithCredential(c, EmailAuthProvider.credential(c.email, currentPassword));
+                    if (newEmail && newEmail !== c.email) await verifyBeforeUpdateEmail(c, newEmail); if (newPassword) await updatePassword(c, newPassword);
                     setNewEmail(''); setNewPassword(''); setCurrentPassword(''); showToast("Perfil atualizado!", 'success');
                 } catch (e) { showToast(e.message, 'error'); } finally { setIsProcessing(false); }
             };
@@ -939,415 +734,169 @@
             const handleSaveMessageConfig = async (e) => {
                 e.preventDefault(); setIsProcessing(true);
                 try {
-                    // ATUALIZAÇÃO: Incluindo botSendTime e API Key (se CEO) nas configurações do usuário
-                    const updatedFields = { 
-                        companyName: msgCompany, 
-                        messageTemplates: { client: msgTemplates.client || {}, team: msgTemplates.team || {} },
-                        botSendTime: botSendTime // Salva o horário de disparo
-                    };
-                    if (user.role === 'ceo') { 
-                        updatedFields.aiApiKey = ceoApiKey; 
-                        setUserApiKey(ceoApiKey); // Atualiza o estado local para uso imediato
-                    }
-                    
-                    await updateDoc(doc(getUsersCollection(), user.id), updatedFields);
-                    
-                    // Atualiza o usuário local (mas mantém a consistência com a resposta do Firebase, se fosse um endpoint real)
-                    setUser(prev => ({...prev, ...updatedFields})); 
-                    showToast("Configurações salvas!", 'success');
-                } catch (e) { showToast(`Erro ao salvar: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
+                    const updatedFields = { companyName: msgCompany, messageTemplates: { client: msgTemplates.client || {}, team: msgTemplates.team || {} }, botSendTime: botSendTime };
+                    if (user.role === 'ceo') { updatedFields.aiApiKey = ceoApiKey; setUserApiKey(ceoApiKey); }
+                    await updateDoc(doc(getUsersCollection(), user.id), updatedFields); setUser(prev => ({...prev, ...updatedFields})); showToast("Salvo!", 'success');
+                } catch (e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
             };
 
-            // ATUALIZAÇÃO: Refatorado para lidar com os novos prompts e opções de IA
             const handleAiAction = async (type) => {
-                const activeApiKey = userApiKey; // Usa a chave centralizada (do CEO ou default)
-                if (!activeApiKey || activeApiKey === defaultApiKey) return showToast("Chave de API não configurada. Peça ao CEO para configurá-la.", 'error');
-                
-                setAiLoading(true); setAiResponse(''); 
-                let p = '';
-                
+                const activeApiKey = userApiKey; if (!activeApiKey || activeApiKey === defaultApiKey) return showToast("Chave API não configurada.", 'error');
+                setAiLoading(true); setAiResponse(''); let p = '';
                 if (type === 'support') {
-                    if (!aiInput.trim()) { setAiLoading(false); return showToast("Digite o problema do cliente, por exemplo: 'Tela preta, sinal sumiu, usuário 123'.", 'error'); }
-                    p = `Atue como um Especialista Técnico de IPTV. O cliente relatou: "${aiInput}". Dê uma solução passo-a-passo, curta e cordial, com tom profissional. Formate a resposta usando Markdown.`;
+                    if (!aiInput.trim()) { setAiLoading(false); return showToast("Digite o problema.", 'error'); }
+                    p = `Atue como Suporte IPTV. Cliente: "${aiInput}". Solução técnica curta e cordial.`;
                 } else if (type === 'marketing') {
-                    // Uso de 'marketingPrompt' (agora com as opções de valor)
-                    p = `Atue como Marqueteiro de Alto Nível para IPTV. Crie 3 textos curtos para WhatsApp e Telegram focados em Vendas, com gatilhos de urgência e clareza, sobre o tema: "${marketingPrompt}". O texto deve ser profissional e persuasivo.`;
+                    p = `Crie 3 textos curtos para WhatsApp sobre "${marketingPrompt}" para venda de IPTV.`;
                 } else if (type === 'consultant') {
-                    p = `Atue como Consultor de Negócios IPTV de forma profissional. Dados da sua revenda: ${clients.length} Clientes. Ativos: ${stats.active}. Vencidos: ${stats.expired}. Receita Ativa (prevista): ${formatCurrency(financialStats.activeRevenue)}. Baseado nestes dados, forneça uma análise concisa e 3 dicas de ação imediatas para maximizar o lucro.`;
-                } else {
-                    setAiLoading(false); return;
-                }
-                
-                try {
-                    const text = await callGemini(p, activeApiKey); 
-                    setAiResponse(text); 
-                    showToast("Resposta gerada!", 'success');
-                } catch(e) { 
-                    showToast(`Erro IA: ${e.message}`, 'error'); 
-                }
-                setAiLoading(false); 
-                // ATUALIZAÇÃO: Limpa o input após o envio para o chat de suporte.
-                if (type === 'support') {
-                    setAiInput('');
-                }
+                    p = `Consultoria IPTV: ${clients.length} Clientes. Ativos: ${stats.active}. Vencidos: ${stats.expired}. Dê 3 dicas para lucrar mais.`;
+                } else { setAiLoading(false); return; }
+                try { const text = await callGemini(p, activeApiKey); setAiResponse(text); } catch(e) { showToast(`Erro IA: ${e.message}`, 'error'); }
+                setAiLoading(false); if (type === 'support') setAiInput('');
             };
 
-            const handleSelectClient = (clientId) => setSelectedClients(prev => prev.includes(clientId) ? prev.filter(id => id !== clientId) : [...prev, clientId]);
-            const isAnySelected = selectedClients.length > 0;
-            const handleDeleteAllClients = () => {
-                const targetClients = filteredClients.length > 0 ? filteredClients : clients;
-                if(targetClients.length === 0) return;
-                setConfirmDialog({
-                    isOpen: true, title: 'Excluir TODOS?', message: `Apagará ${targetClients.length} clientes.`,
-                    onConfirm: async () => {
-                        setIsProcessing(true);
-                        try {
-                            const batches = []; let batch = writeBatch(db); let count = 0;
-                            targetClients.forEach(client => { batch.delete(doc(getClientsCollection(), client.id)); count++; if (count % 499 === 0) { batches.push(batch.commit()); batch = writeBatch(db); } });
-                            batches.push(batch.commit()); await Promise.all(batches);
-                            showToast(`Exclusão de ${count} clientes concluída!`, 'success'); setSelectedClients([]); setConfirmDialog({ isOpen: false });
-                        } catch (e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
-                    }
-                });
-            };
-            const handleDeleteSelectedClients = () => {
-                if(selectedClients.length === 0) return;
-                setConfirmDialog({
-                    isOpen: true, title: `Excluir ${selectedClients.length}?`, message: 'Confirmar exclusão.',
-                    onConfirm: async () => {
-                        setIsProcessing(true);
-                        try {
-                            const batches = []; let batch = writeBatch(db); let count = 0;
-                            selectedClients.forEach(clientId => { batch.delete(doc(getClientsCollection(), clientId)); count++; if (count % 499 === 0) { batches.push(batch.commit()); batch = writeBatch(db); } });
-                            batches.push(batch.commit()); await Promise.all(batches);
-                            showToast(`Exclusão concluída!`, 'success'); setSelectedClients([]); setConfirmDialog({ isOpen: false });
-                        } catch (e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
-                    }
-                });
-            };
-
-            // ATUALIZAÇÃO: Refinando o filtro de clientes para incluir o novo filtro 'expired'
             const filteredClients = useMemo(() => {
                 return clients.filter(c => {
-                    const match = c.name?.toLowerCase().includes(searchTerm.toLowerCase()) || c.whatsapp?.includes(searchTerm);
-                    if (!match) return false;
+                    const match = c.name?.toLowerCase().includes(searchTerm.toLowerCase()) || c.whatsapp?.includes(searchTerm); if (!match) return false;
                     const s = getClientStatus(c.dueDate).status;
-                    if (filterStatus === 'all') return true;
-                    if (filterStatus === 'active') return ['active','today','expiring'].includes(s);
-                    if (filterStatus === 'expired') return s === 'expired';
-                    return true;
+                    if (filterStatus === 'all') return true; if (filterStatus === 'active') return ['active','today','expiring'].includes(s); if (filterStatus === 'expired') return s === 'expired'; return true;
                 }).sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
             }, [clients, searchTerm, filterStatus]);
 
-            // ATUALIZAÇÃO: Lógica de filtro para a equipe
-            const filteredTeam = useMemo(() => {
-                return team.filter(t => {
-                    const matchSearch = t.name?.toLowerCase().includes(searchTeamTerm.toLowerCase()) || t.email?.toLowerCase().includes(searchTeamTerm.toLowerCase());
-                    let matchRole = true;
-                    if (teamFilter !== 'all') {
-                        matchRole = t.role === teamFilter;
-                    }
-                    return matchSearch && matchRole;
-                });
-            }, [team, searchTeamTerm, teamFilter]);
-
-            // ATUALIZAÇÃO: Lógica para calcular as estatísticas, incluindo o filtro 'expired'
             const stats = useMemo(() => {
-                const clientStatuses = clients.map(c => getClientStatus(c.dueDate).status);
-                return {
-                    total: clients.length,
-                    active: clientStatuses.filter(s => ['active', 'today', 'expiring'].includes(s)).length,
-                    expired: clientStatuses.filter(s => s === 'expired').length
+                let activeCount = 0;
+                let expiredCount = 0;
+                let activeVal = 0;
+                let expiredVal = 0;
+
+                clients.forEach(c => {
+                    const statusData = getClientStatus(c.dueDate);
+                    const val = parseFloat(c.value) || 0;
+                    
+                    if (['active', 'today', 'expiring'].includes(statusData.status)) {
+                        activeCount++;
+                        activeVal += val;
+                    } else if (statusData.status === 'expired') {
+                        expiredCount++;
+                        expiredVal += val;
+                    }
+                });
+
+                return { 
+                    total: clients.length, 
+                    active: activeCount, 
+                    expired: expiredCount,
+                    activeValue: activeVal,
+                    expiredValue: expiredVal
                 };
             }, [clients]);
-            
-            // ATUALIZAÇÃO: Estatísticas de equipe
-            const teamStats = useMemo(() => {
-                return {
-                    total: team.length,
-                    master: team.filter(t => t.role === 'master').length,
-                    reseller: team.filter(t => t.role === 'reseller').length
-                };
-            }, [team]);
 
-            const financialStats = useMemo(() => {
-                const activeRevenue = clients.filter(c => ['active', 'today', 'expiring'].includes(getClientStatus(c.dueDate).status)).reduce((acc, curr) => acc + (parseFloat(curr.value) || 0), 0);
-                const lostRevenue = clients.filter(c => getClientStatus(c.dueDate).status === 'expired').reduce((acc, curr) => acc + (parseFloat(curr.value) || 0), 0);
-                return { activeRevenue, lostRevenue };
-            }, [clients]);
-
-            const handleSelectAllClients = () => setSelectedClients(selectedClients.length === filteredClients.length ? [] : filteredClients.map(c => c.id));
-            const canAdd = activeTab === 'clients' || (activeTab === 'team' && (user?.role === 'ceo' || user?.role === 'master'));
-            const myDaysLeft = getDaysLeft(user?.panelExpiration);
-            const isExpired = isPanelExpired(user?.panelExpiration) && user?.role !== 'ceo';
-
-            // Determina se o usuário atual pode ver a aba Equipe
+            const canAdd = activeTab === 'clients' || activeTab === 'financial' || (activeTab === 'team' && (user?.role === 'ceo' || user?.role === 'master'));
             const isTeamViewer = user?.role === 'ceo' || user?.role === 'master';
-            // Determina se o usuário atual pode configurar a aba Equipe nas mensagens
             const isMessageTeamConfigurable = user?.role === 'ceo' || user?.role === 'master';
-            
-            // ATUALIZAÇÃO IA: Opções de prompt de marketing
-            const marketingOptions = [
-                { value: 'Futebol: Clássico Local', label: 'Futebol: Clássico Local (Alto Valor)' },
-                { value: 'Séries: Lançamento Netflix', label: 'Séries: Lançamento Netflix (Alto Valor)' },
-                { value: 'Promoção: Combo Mensal', label: 'Promoção: Combo Mensal (Vendas Rápidas)' },
-                { value: 'Suporte: Aviso de Manutenção', label: 'Suporte: Aviso de Manutenção (Fidelização)' },
-                { value: 'Valor: Teste Grátis de 24h', label: 'Marketing de Valor: Teste Grátis de 24h (Captura de Leads)' }
-            ];
-
-            // --- NOVO MAPEAR DE CORES PARA STATUS BAR ---
-            const statusColorMap = {
-                active: 'border-green-500',
-                expiring: 'border-yellow-500', // Vence em breve
-                today: 'border-orange-500', // Vence hoje
-                expired: 'border-red-500', // Vencido
-                no_date: 'border-slate-500' // Sem data
-            };
-            // --- FIM NOVO MAPEAR DE CORES ---
-
+            const statusColorMap = { active: 'border-green-500', expiring: 'border-yellow-500', today: 'border-orange-500', expired: 'border-red-500', no_date: 'border-slate-500' };
 
             if (initializing) return <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-orange-500 gap-4"><LoadingSpinner size={40} /><p className="font-bold animate-pulse">Carregando Sistema...</p></div>;
-
-            if (isExpired && user) {
-                return (
-                    <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
-                        <div className="bg-slate-900 p-8 rounded-2xl border border-red-500/50 max-w-md w-full shadow-2xl relative z-10">
-                            <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6"><Ban size={40} className="text-red-500" /></div>
-                            <h2 className="text-3xl font-bold text-white mb-2">ACESSO BLOQUEADO</h2>
-                            <p className="text-slate-400 mb-8">Seu painel <strong>expirou</strong>. Contate seu Master.</p>
-                            <button onClick={handleLogout} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl">Sair da Conta</button>
-                        </div>
-                    </div>
-                );
-            }
+            if (user && isPanelExpired(user.panelExpiration) && user.role !== 'ceo') return (<div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-center"><div className="bg-slate-900 p-8 rounded-2xl border border-red-500/50"><h2 className="text-3xl font-bold text-white mb-2">ACESSO BLOQUEADO</h2><button onClick={handleLogout} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl mt-4">Sair da Conta</button></div></div>);
 
             const AuthModal = () => {
-                const [email, setEmail] = useState('');
-                const [password, setPassword] = useState('');
-                const [whatsapp, setWhatsapp] = useState('');
-                const [loading, setLoading] = useState(false);
-                const [error, setError] = useState('');
-                const [showPass, setShowPass] = useState(false);
-                const [resetMode, setResetMode] = useState(false);
-
+                const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [loading, setLoading] = useState(false); const [error, setError] = useState('');
                 const handleAuth = async (e) => {
                     e.preventDefault(); setLoading(true); setError('');
                     try {
-                        if (resetMode) {
-                            await sendPasswordResetEmail(auth, email); showToast("Email enviado!", 'success'); setResetMode(false);
-                        } else if (authType === 'register') {
-                            if (whatsapp.length < 10) throw new Error("WhatsApp inválido.");
-                            const cred = await createUserWithEmailAndPassword(auth, email, password);
-                            await sendEmailVerification(cred.user); await signOut(auth); setShowAuthModal(false); setShowRegistrationSuccess(true);
+                        const emailLower = email.toLowerCase().trim();
+                        
+                        if (authType === 'register') {
+                            const cred = await createUserWithEmailAndPassword(auth, emailLower, password);
+                            await sendEmailVerification(cred.user); 
+                            await signOut(auth); 
+                            setShowAuthModal(false); 
+                            setShowRegistrationSuccess(true);
                         } else {
-                            const cred = await signInWithEmailAndPassword(auth, email, password);
-                            if (!cred.user.emailVerified && cred.user.email !== 'admin@firetv.com') throw new Error("E-mail não verificado.");
-                            const q = query(getUsersCollection(), where('email', '==', email)); const snap = await getDocs(q);
-                            let userData;
+                            const cred = await signInWithEmailAndPassword(auth, emailLower, password);
+                            if (!cred.user.emailVerified && cred.user.email !== 'admin@firetv.com') throw new Error("Verifique seu e-mail.");
+                            
+                            const definitiveEmail = cred.user.email; 
+                            
+                            const q = query(getUsersCollection(), where('email', '==', definitiveEmail)); 
+                            const snap = await getDocs(q);
+                            
                             if (snap.empty) {
-                                if (email === 'admin@firetv.com') {
-                                    const exp = new Date(); exp.setDate(exp.getDate() + 3650);
-                                    const newU = { uid: cred.user.uid, email, role: 'ceo', parentId: 'system', createdAt: serverTimestamp(), name: 'Admin', status: 'active', plan: 'unlimited', panelExpiration: exp.toISOString() };
-                                    const ref = await addDoc(getUsersCollection(), newU); userData = { id: ref.id, ...newU };
+                                if (definitiveEmail === 'admin@firetv.com') {
+                                    await addDoc(getUsersCollection(), { uid: cred.user.uid, email: definitiveEmail, role: 'ceo', parentId: 'system', createdAt: serverTimestamp(), name: 'Admin', status: 'active', plan: 'unlimited', panelExpiration: new Date(new Date().setFullYear(new Date().getFullYear() + 10)).toISOString() });
                                 } else {
-                                    const exp = new Date(); exp.setDate(exp.getDate() + 7);
-                                    const newU = { uid: cred.user.uid, email, role: 'reseller', parentId: 'system', createdAt: serverTimestamp(), name: email.split('@')[0], status: 'active', plan: 'trial', panelExpiration: exp.toISOString() };
-                                    const ref = await addDoc(getUsersCollection(), newU); userData = { id: ref.id, ...newU };
+                                    await addDoc(getUsersCollection(), { uid: cred.user.uid, email: definitiveEmail, role: 'reseller', parentId: 'system', createdAt: serverTimestamp(), name: definitiveEmail.split('@')[0], status: 'active', plan: 'trial', panelExpiration: new Date(new Date().setDate(new Date().getDate() + 7)).toISOString() });
                                 }
-                            } else { userData = { id: snap.docs[0].id, ...snap.docs[0].data() }; }
-                            setUser(userData); setView('dashboard'); localStorage.setItem('firetv_user_session', JSON.stringify(userData)); setShowAuthModal(false);
+                                const snap2 = await getDocs(query(getUsersCollection(), where('email', '==', definitiveEmail)));
+                                if (!snap2.empty) {
+                                    const uData = { id: snap2.docs[0].id, ...snap2.docs[0].data() };
+                                    setUser(uData); 
+                                    localStorage.setItem('firetv_user_session', JSON.stringify(uData));
+                                }
+                            } else {
+                                const uData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                                setUser(uData); 
+                                localStorage.setItem('firetv_user_session', JSON.stringify(uData));
+                            }
+                            
+                            setView('dashboard'); 
+                            setShowAuthModal(false);
                         }
                     } catch (err) { setError(err.message); } finally { setLoading(false); }
                 };
-
                 return (
-                    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-                        <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
+                    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 relative">
                             <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white"><XCircle size={24}/></button>
-                            <h2 className="text-2xl font-bold text-white mb-6">{resetMode ? 'Recuperar Senha' : (authType === 'login' ? 'Bem-vindo' : 'Criar conta')}</h2>
-                            {error && <div className="bg-red-500/10 border border-red-500/50 text-red-200 p-3 rounded-lg mb-4 text-sm">{error}</div>}
+                            <h2 className="text-2xl font-bold text-white mb-6">{authType === 'login' ? 'Entrar' : 'Criar Conta'}</h2>
+                            {error && <div className="bg-red-500/10 text-red-200 p-3 rounded-lg mb-4 text-sm">{error}</div>}
                             <form onSubmit={handleAuth} className="space-y-4">
-                                <div><label className="text-xs text-slate-400 font-bold ml-1">E-MAIL</label><input type="email" required value={email} onChange={e=>setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none"/></div>
-                                {!resetMode && (
-                                    <>
-                                        {authType === 'register' && <div><label className="text-xs text-slate-400 font-bold ml-1">WHATSAPP</label><input type="tel" required value={whatsapp} onChange={e=>setWhatsapp(e.target.value.replace(/\D/g,''))} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none"/></div>}
-                                        <div className="relative"><label className="text-xs text-slate-400 font-bold ml-1">SENHA</label><input type={showPass?'text':'password'} required value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white outline-none"/><button type="button" onClick={()=>setShowPass(!showPass)} className="absolute right-4 top-7 text-slate-500">{showPass?<EyeOff size={18}/>:<Eye size={18}/>}</button></div>
-                                    </>
-                                )}
-                                <button disabled={loading} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3.5 rounded-xl">{loading ? <LoadingSpinner/> : (resetMode ? 'Enviar' : (authType === 'login' ? 'Entrar' : 'Registrar'))}</button>
-                            </form>
-                            <div className="text-center mt-4"><button onClick={() => setResetMode(!resetMode)} className="text-sm text-slate-400 hover:text-white">{resetMode ? 'Voltar' : 'Esqueceu a senha?'}</button></div>
-                        </div>
-                    </div>
-                );
-            };
-
-            const RegistrationSuccess = () => (
-                <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-                    <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-8 text-center shadow-2xl">
-                        <CheckCircle size={48} className="text-green-500 mx-auto mb-4 animate-bounce-slow" />
-                        <h2 className="text-2xl font-black text-white mb-4">🎉 Quase lá! Falta só um passo...</h2>
-                        
-                        <div className="text-left text-slate-300 space-y-3 mb-6">
-                            <p className="font-semibold text-lg">Sua conta está <strong className="text-orange-500">QUASE CRIADA</strong>! Agora você precisa verificar seu e-mail.</p>
-                            
-                            <p className="text-sm">Vá até o e-mail que você cadastrou e procure por nossa mensagem: <strong className="text-white">Fire Gestor</strong>. Clique no link de verificação em azul.</p>
-                            
-                            <p className="text-sm border-t border-slate-800 pt-3">Após verificar, volte aqui e entre com o e-mail e senha cadastrados.</p>
-                            
-                            <p className="text-xs p-3 rounded-lg bg-yellow-500/10 text-yellow-400 font-bold border border-yellow-500/50">
-                                ⚠️ LEMBRANDO: Nosso e-mail quase sempre vai para a caixa de <strong className="text-yellow-300">SPAM</strong>! Se não aparecer na principal, verifique lá que a mensagem estará esperando por você.
-                            </p>
-                        </div>
-
-                        <button onClick={() => setShowRegistrationSuccess(false)} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition-all">OK, ENTENDIDO!</button>
-                    </div>
-                </div>
-            );
-
-            const ConfirmDialog = () => {
-                if (!confirmDialog.isOpen) return null;
-                return (
-                    <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4">
-                        <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-6">
-                            <h3 className="font-bold text-white text-lg mb-2">{confirmDialog.title}</h3>
-                            <p className="text-slate-400 text-sm mb-6" dangerouslySetInnerHTML={{__html: confirmDialog.message}}></p>
-                            <div className="flex justify-end gap-3">
-                                <button onClick={() => setConfirmDialog({ isOpen: false })} className="px-4 py-2 rounded-lg text-slate-300 font-bold text-sm">Cancelar</button>
-                                <button onClick={() => confirmDialog.onConfirm()} className="px-4 py-2 rounded-lg bg-red-600 text-white font-bold text-sm">Confirmar</button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            };
-
-            const Notification = () => {
-                const [isExiting, setIsExiting] = useState(false);
-                useEffect(() => { if (notification.show) { setIsExiting(false); const t = setTimeout(() => setIsExiting(true), 3000); return () => clearTimeout(t); } }, [notification.show]);
-                useEffect(() => { if (isExiting) { const t = setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 500); return () => clearTimeout(t); } }, [isExiting]);
-                if (!notification.show && !isExiting) return null;
-                const c = { success: 'bg-emerald-600', error: 'bg-red-600', info: 'bg-blue-600' };
-                return <div className={`fixed bottom-24 md:bottom-5 right-5 ${c[notification.type]} text-white px-5 py-3 rounded-xl shadow-2xl transition-all duration-500 z-[999] ${isExiting ? 'opacity-0 translate-x-full' : 'opacity-100'}`}>{notification.message}</div>;
-            };
-
-            const PanelExpModal = () => {
-                if (!isPanelExpModalOpen || !editingItem) return null;
-                return (
-                    <div className="fixed inset-0 bg-black/80 z-[85] flex items-center justify-center p-4 backdrop-blur-sm">
-                        <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-6 relative">
-                            <button onClick={() => {setEditingItem(null); setIsPanelExpModalOpen(false); setExpDays(0);}} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400"><XCircle size={20}/></button>
-                            <h3 className="font-bold text-white text-xl mb-4">Ajustar Expiração</h3>
-                            <form onSubmit={handleExpDaysChange} className="space-y-4">
-                                <div><label className="text-xs font-bold text-slate-500 ml-1">DIAS (+/-)</label><input type="number" required value={expDays} onChange={e => setExpDays(parseInt(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none text-xl text-center"/></div>
-                                <button type="submit" disabled={isProcessing || expDays === 0} className="w-full bg-blue-600 hover:bg-blue-500 py-3.5 rounded-xl font-bold text-white">{isProcessing ? <LoadingSpinner /> : 'Confirmar'}</button>
+                                <input type="email" required placeholder="E-mail" value={email} onChange={e=>setEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white"/>
+                                <input type="password" required placeholder="Senha" value={password} onChange={e=>setPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white"/>
+                                <button disabled={loading} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3.5 rounded-xl">{loading ? <LoadingSpinner/> : 'Continuar'}</button>
                             </form>
                         </div>
                     </div>
                 );
             };
 
-            if (view === 'landing') {
-                return (
-                    <div className="min-h-screen bg-slate-950 relative overflow-hidden">
-                        <div className="absolute inset-0 bg-grid-slate-800/10"></div>
-                        <div className="relative z-10 pt-20 pb-20 text-center max-w-7xl mx-auto px-4">
-                            <h1 className="text-4xl md:text-6xl font-black text-white mb-4">Gerencie seu IPTV<br/> com <span className="text-orange-500">Inteligência</span></h1>
-                            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-8">
-                                <button onClick={() => { setAuthType('register'); setShowAuthModal(true); }} className="w-full sm:w-auto bg-orange-600 hover:bg-orange-500 text-white font-bold text-lg px-8 py-4 rounded-xl">TESTE GRÁTIS 7 DIAS</button>
-                                <button onClick={() => { setAuthType('login'); setShowAuthModal(true); }} className="w-full sm:w-auto text-slate-300 font-bold text-lg px-8 py-4 rounded-xl hover:bg-slate-800/50">Já tenho conta</button>
-                            </div>
-                        </div>
-                        <FeaturesSection />
-                        <FAQSection />
-                        {showAuthModal && <AuthModal />}
-                        {showRegistrationSuccess && <RegistrationSuccess />}
-                    </div>
-                );
-            }
+            const ConfirmDialog = () => { if (!confirmDialog.isOpen) return null; return (<div className="fixed inset-0 bg-black/80 z-[99] flex items-center justify-center p-4"><div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-6"><h3 className="font-bold text-white text-lg mb-2">{confirmDialog.title}</h3><p className="text-slate-400 text-sm mb-6" dangerouslySetInnerHTML={{__html: confirmDialog.message}}></p><div className="flex justify-end gap-3"><button onClick={() => setConfirmDialog({ isOpen: false })} className="px-4 py-2 rounded-lg text-slate-300 font-bold text-sm">Cancelar</button><button onClick={() => confirmDialog.onConfirm()} className="px-4 py-2 rounded-lg bg-red-600 text-white font-bold text-sm">Confirmar</button></div></div></div>); };
+            const Notification = () => { if (!notification.show) return null; setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 3000); return <div className={`fixed bottom-24 md:bottom-5 right-5 ${notification.type==='error'?'bg-red-600':'bg-emerald-600'} text-white px-5 py-3 rounded-xl shadow-2xl z-[999] animate-slide-in`}>{notification.message}</div>; };
+            const PanelExpModal = () => { if (!isPanelExpModalOpen) return null; return (<div className="fixed inset-0 bg-black/80 z-[85] flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-6 relative"><button onClick={() => setIsPanelExpModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400"><XCircle size={20}/></button><h3 className="font-bold text-white text-xl mb-4">Ajustar Expiração</h3><form onSubmit={handleExpDaysChange} className="space-y-4"><div><label className="text-xs font-bold text-slate-500 ml-1">DIAS (+/-)</label><input type="number" required value={expDays} onChange={e => setExpDays(parseInt(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white text-xl text-center"/></div><button type="submit" disabled={isProcessing} className="w-full bg-blue-600 hover:bg-blue-500 py-3.5 rounded-xl font-bold text-white">{isProcessing ? <LoadingSpinner /> : 'Confirmar'}</button></form></div></div>); };
+
+            if (view === 'landing') return (<div className="min-h-screen bg-slate-950 relative overflow-hidden"><div className="absolute inset-0 bg-grid-slate-800/10"></div><div className="relative z-10 pt-20 pb-20 text-center max-w-7xl mx-auto px-4"><h1 className="text-4xl md:text-6xl font-black text-white mb-4">Gerencie seu IPTV<br/> com <span className="text-orange-500">Inteligência</span></h1><div className="flex justify-center gap-4 mt-8"><button onClick={() => { setAuthType('register'); setShowAuthModal(true); }} className="bg-orange-600 text-white font-bold text-lg px-8 py-4 rounded-xl">TESTE GRÁTIS</button><button onClick={() => { setAuthType('login'); setShowAuthModal(true); }} className="text-slate-300 font-bold text-lg px-8 py-4 rounded-xl hover:bg-slate-800">Entrar</button></div></div><FeaturesSection /><FAQSection />{showAuthModal && <AuthModal />}{showRegistrationSuccess && <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50"><div className="bg-slate-900 p-8 rounded-2xl text-center"><CheckCircle size={48} className="text-green-500 mx-auto mb-4"/><h2 className="text-2xl font-bold text-white">Verifique seu E-mail</h2><p className="text-slate-400 mt-2">Enviamos um link de confirmação.</p><button onClick={() => setShowRegistrationSuccess(false)} className="mt-6 w-full bg-orange-600 text-white font-bold py-3 rounded-xl">OK</button></div></div>}</div>);
 
             return (
                 <div className="flex h-screen bg-slate-900">
-                    {showAuthModal && <AuthModal />} {showRegistrationSuccess && <RegistrationSuccess />} <ConfirmDialog /> <Notification />
+                    {showAuthModal && <AuthModal />} {showRegistrationSuccess && <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50"><div className="bg-slate-900 p-8 rounded-xl"><h2 className="text-white font-bold">Verifique seu e-mail!</h2><button onClick={()=>setShowRegistrationSuccess(false)} className="mt-4 bg-orange-600 text-white px-4 py-2 rounded">OK</button></div></div>} <ConfirmDialog /> <Notification />
                     <ImportExportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} clients={clients} user={user} showToast={showToast} isProcessing={isProcessing} />
-                    
-                    {/* Renderização do Modal de Mensagem (Componente movido para fora do FireTVManager) */}
-                    {isMessageModalOpen && (
-                        <MessageModal 
-                            messageClient={messageClient}
-                            messageEdit={messageEdit}
-                            setMessageEdit={setMessageEdit}
-                            isProcessing={isProcessing}
-                            setIsMessageModalOpen={setIsMessageModalOpen}
-                            showToast={showToast}
-                            sendBotMessageFromModal={sendBotMessageFromModal}
-                        />
-                    )} 
-                    
-                    {/* Renderização do Modal de Visualização (Componente movido para fora do FireTVManager) */}
-                    {isViewModalOpen && (
-                        <ViewModal
-                            isViewModalOpen={isViewModalOpen}
-                            setIsViewModalOpen={setIsViewModalOpen}
-                            viewingItem={viewingItem}
-                            InfoField={InfoField}
-                            UserPlus={UserPlus}
-                            Smartphone={Smartphone}
-                            Calendar={Calendar}
-                            DollarSign={DollarSign}
-                            Wifi={Wifi}
-                            FileText={FileText}
-                            Info={Info}
-                            XCircle={XCircle}
-                            formatCurrency={formatCurrency}
-                            formatDate={formatDate}
-                        />
-                    )} 
-                    
+                    {isMessageModalOpen && <MessageModal messageClient={messageClient} messageEdit={messageEdit} setMessageEdit={setMessageEdit} isProcessing={isProcessing} setIsMessageModalOpen={setIsMessageModalOpen} showToast={showToast} sendBotMessageFromModal={sendBotMessageFromModal} />} 
+                    {isViewModalOpen && <ViewModal isViewModalOpen={isViewModalOpen} setIsViewModalOpen={setIsViewModalOpen} viewingItem={viewingItem} InfoField={InfoField} UserPlus={UserPlus} Smartphone={Smartphone} Calendar={Calendar} DollarSign={DollarSign} Wifi={Wifi} FileText={FileText} Info={Info} XCircle={XCircle} formatCurrency={formatCurrency} formatDate={formatDate} />} 
                     {isPanelExpModalOpen && <PanelExpModal />}
 
                     <aside className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800">
-                         <div className="flex items-center gap-2 p-4 border-b border-slate-800">
-                            {/* ÍCONE DE CLIENTES/GESTOR ATUALIZADO PARA USERPLUS LARANJA */}
-                            <div className="bg-orange-600 p-1.5 rounded-lg"><UserPlus size={20} /></div>
-                            <span className="text-xl font-black">FIRE <span className="text-orange-500">GESTOR</span></span>
-                         </div>
-                         {/* ATUALIZAÇÃO: Identificação do painel (Cargo) */}
-                         <div className="mx-4 mt-4 p-3 rounded-xl border bg-slate-800 border-slate-700 text-slate-300">
-                             <div className="flex items-center gap-2 mb-2">
-                                <User size={16} className={user?.role === 'ceo' ? 'text-red-400' : user?.role === 'master' ? 'text-purple-400' : 'text-blue-400'}/>
-                                <span className="text-xs font-bold uppercase">{user?.role === 'ceo' ? 'CEO' : user?.role === 'master' ? 'MASTER' : 'REVENDA'}</span>
-                             </div>
-                             <div className="flex items-center gap-2 mb-1">
-                                <Clock size={16} />
-                                <span className="text-[10px] font-bold uppercase">{user.plan === 'trial' ? 'Teste' : 'Painel'}</span>
-                            </div>
-                             {/* CORREÇÃO: Substituído Infinity por Sparkles */}
-                             {user.role === 'ceo' ? <div className="text-sm font-bold flex items-center gap-1 text-orange-400"><Sparkles size={24}/> Ilimitado</div> : <div className="text-sm font-bold"><span className="text-xl">{myDaysLeft}</span> dias</div>}
-                         </div>
+                         <div className="flex items-center gap-2 p-4 border-b border-slate-800"><div className="bg-orange-600 p-1.5 rounded-lg"><UserPlus size={20} /></div><span className="text-xl font-black">FIRE <span className="text-orange-500">GESTOR</span></span></div>
+                         <div className="mx-4 mt-4 p-3 rounded-xl border bg-slate-800 border-slate-700 text-slate-300"><div className="flex items-center gap-2 mb-2"><User size={16} className={user?.role === 'ceo' ? 'text-red-400' : user?.role === 'master' ? 'text-purple-400' : 'text-blue-400'}/><span className="text-xs font-bold uppercase">{user?.role === 'ceo' ? 'CEO' : user?.role === 'master' ? 'MASTER' : 'REVENDA'}</span></div><div className="text-sm font-bold flex items-center gap-1">{user.role === 'ceo' ? <><Sparkles size={16} className="text-orange-400"/> Ilimitado</> : <><Clock size={16}/> {getDaysLeft(user.panelExpiration)} dias</>}</div></div>
                          <nav className="flex-1 p-4 space-y-1 mt-4">
-                             {[ { id: 'dashboard', label: 'Início', icon: LayoutDashboard }, { id: 'clients', label: 'Clientes', icon: UserPlus }, { id: 'team', label: 'Equipe', icon: Shield }, { id: 'ai', label: 'Inteligência', icon: Sparkles, color: 'text-purple-400' }, { id: 'settings', label: 'Configurações', icon: Settings } ].map(item => (
+                             {[ { id: 'dashboard', label: 'Início', icon: LayoutDashboard }, { id: 'clients', label: 'Clientes', icon: UserPlus }, { id: 'financial', label: 'Financeiro', icon: DollarSign, color: 'text-green-400' }, { id: 'team', label: 'Equipe', icon: Shield }, { id: 'ai', label: 'Inteligência', icon: Sparkles, color: 'text-purple-400' }, { id: 'settings', label: 'Configurações', icon: Settings } ].map(item => (
                                  <button key={item.id} onClick={()=>{setActiveTab(item.id); setSettingsView('menu'); setAiView('menu');}} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm ${activeTab === item.id ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50'}`}><item.icon size={18} className={item.color || ""} /> {item.label}</button>
                              ))}
                          </nav>
                          <div className="p-4 border-t border-slate-800"><button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-red-400 hover:bg-red-500/10 p-2.5 rounded-lg text-sm font-bold"><LogOut size={16} /> Sair</button></div>
                     </aside>
 
-                    <div className="md:hidden fixed top-0 w-full bg-slate-900/95 z-30 border-b border-slate-800 px-4 py-3 flex justify-between items-center">
-                        {/* ÍCONE DE CLIENTES/GESTOR ATUALIZADO PARA USERPLUS LARANJA */}
-                        <span className="font-black flex items-center gap-2"><UserPlus size={20} className="text-orange-500"/> FIRE</span>
-                        <button onClick={handleLogout} className="bg-slate-800 p-2 rounded-full text-slate-400"><LogOut size={18}/></button>
-                    </div>
+                    <div className="md:hidden fixed top-0 w-full bg-slate-900/95 z-30 border-b border-slate-800 px-4 py-3 flex justify-between items-center"><span className="font-black flex items-center gap-2"><UserPlus size={20} className="text-orange-500"/> FIRE</span><button onClick={handleLogout} className="bg-slate-800 p-2 rounded-full text-slate-400"><LogOut size={18}/></button></div>
 
-                    {/* ATUALIZAÇÃO: Removida a altura fixa do flexbox principal para a rolagem unificada */}
                     <main className="flex-1 overflow-y-auto bg-slate-950 relative pt-20 pb-24 md:pt-0 md:pb-0">
                         <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-full">
                             {activeTab !== 'ai' && activeTab !== 'settings' && (
                                 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                                    <div><h1 className="text-2xl md:text-3xl font-bold text-white">{activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'clients' ? 'Meus Clientes' : 'Gestão de Equipe'}</h1></div>
+                                    <div><h1 className="text-2xl md:text-3xl font-bold text-white">{activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'clients' ? 'Meus Clientes' : activeTab === 'financial' ? 'Controle Financeiro' : 'Gestão de Equipe'}</h1></div>
                                     <div className="flex items-center gap-2">
-                                        {/* CORREÇÃO: FileText ao invés de FileSpreadsheet */}
                                         {activeTab === 'clients' && <button onClick={() => setIsImportModalOpen(true)} className="bg-slate-800 px-4 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm"><FileText size={18} /> Importar</button>}
-                                        {canAdd && <button onClick={() => { setModalType(activeTab === 'clients' ? 'client' : 'user'); setIsAddModalOpen(true); }} className="bg-orange-600 px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm"><Plus size={20} /> Novo</button>}
+                                        {/* BOTÃO PARA FINANCEIRO */}
+                                        {activeTab === 'financial' && <button onClick={() => { setIsTransactionModalOpen(true); setEditingItem(null); setTransactionFormData({ description: '', amount: '', type: 'income', date: new Date().toISOString().split('T')[0], category: 'Mensalidade' }); }} className="bg-green-600 px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm hover:bg-green-500"><Plus size={20} /> Nova Transação</button>}
+                                        {canAdd && activeTab !== 'financial' && <button onClick={() => { setModalType(activeTab === 'clients' ? 'client' : 'user'); setIsAddModalOpen(true); }} className="bg-orange-600 px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm"><Plus size={20} /> Novo</button>}
                                     </div>
                                 </header>
                             )}
@@ -1360,46 +909,131 @@
                                         <StatCard title="Vencidos" value={stats.expired} icon={<AlertTriangle size={24} />} color="red" />
                                         <StatCard title="Equipe" value={team.length} icon={<Shield size={24} />} color="purple" />
                                     </div>
+
+                                    {/* NOVOS CARDS DE ESTIMATIVA BRUTA - VISUAL LIMPO */}
+                                    <h3 className="text-white font-bold text-lg mt-6 mb-4">Estimativa Bruta (Mensalidade)</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="bg-slate-900 p-6 rounded-2xl border border-green-500/30 flex items-center justify-between shadow-lg shadow-green-900/10">
+                                            <div>
+                                                <p className="text-slate-400 font-bold text-xs uppercase mb-1">Receita Ativa (Bruto)</p>
+                                                <h3 className="text-3xl font-black text-green-400">{formatCurrency(stats.activeValue)}</h3>
+                                                <p className="text-xs text-slate-500 mt-1">Soma dos planos ativos</p>
+                                            </div>
+                                            <div className="bg-green-500/10 p-3 rounded-xl text-green-500"><TrendingUp size={24}/></div>
+                                        </div>
+
+                                        <div className="bg-slate-900 p-6 rounded-2xl border border-red-500/30 flex items-center justify-between shadow-lg shadow-red-900/10">
+                                            <div>
+                                                <p className="text-slate-400 font-bold text-xs uppercase mb-1">Valor Vencido (Bruto)</p>
+                                                <h3 className="text-3xl font-black text-red-400">{formatCurrency(stats.expiredValue)}</h3>
+                                                <p className="text-xs text-slate-500 mt-1">Soma dos planos vencidos</p>
+                                            </div>
+                                            <div className="bg-red-500/10 p-3 rounded-xl text-red-500"><AlertTriangle size={24}/></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'financial' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    {/* DASHBOARD FINANCEIRO */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl relative overflow-hidden group">
+                                            <div className="absolute right-0 top-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity"><TrendingUp size={64} className="text-green-500"/></div>
+                                            <p className="text-slate-400 font-bold text-xs uppercase mb-1">Entradas (Receita)</p>
+                                            <h3 className="text-3xl font-black text-green-400">{formatCurrency(financialSummary.income)}</h3>
+                                        </div>
+                                        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl relative overflow-hidden group">
+                                            <div className="absolute right-0 top-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity"><TrendingDown size={64} className="text-red-500"/></div>
+                                            <p className="text-slate-400 font-bold text-xs uppercase mb-1">Saídas (Despesas)</p>
+                                            <h3 className="text-3xl font-black text-red-400">{formatCurrency(financialSummary.expense)}</h3>
+                                        </div>
+                                        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl relative overflow-hidden group">
+                                            <div className="absolute right-0 top-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity"><PieChart size={64} className="text-blue-500"/></div>
+                                            <p className="text-slate-400 font-bold text-xs uppercase mb-1">Saldo Líquido</p>
+                                            <h3 className={`text-3xl font-black ${financialSummary.balance >= 0 ? 'text-blue-400' : 'text-red-500'}`}>{formatCurrency(financialSummary.balance)}</h3>
+                                        </div>
+                                    </div>
+
+                                    {/* FILTROS E LISTA */}
+                                    <div className="bg-slate-900 rounded-2xl border border-slate-800 flex flex-col">
+                                        <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+                                            <h3 className="font-bold text-white flex items-center gap-2"><FileText size={18}/> Extrato</h3>
+                                            <input type="month" value={financialFilterDate} onChange={(e) => setFinancialFilterDate(e.target.value)} className="bg-slate-950 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-sm outline-none font-bold" />
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left text-sm text-slate-400">
+                                                <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold"><tr><th className="px-6 py-4">Data</th><th className="px-6 py-4">Descrição</th><th className="px-6 py-4">Categoria</th><th className="px-6 py-4">Valor</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
+                                                <tbody className="divide-y divide-slate-800">
+                                                    {financialSummary.history.length === 0 ? (
+                                                        <tr><td colSpan="5" className="px-6 py-8 text-center text-slate-600 italic">Nenhuma transação neste mês.</td></tr>
+                                                    ) : financialSummary.history.map(t => (
+                                                        <tr key={t.id} className="hover:bg-slate-800/30">
+                                                            <td className="px-6 py-4">{formatDate(t.date)}</td>
+                                                            <td className="px-6 py-4 font-bold text-white">{t.description}</td>
+                                                            <td className="px-6 py-4"><span className="bg-slate-800 px-2 py-1 rounded text-xs">{t.category}</span></td>
+                                                            <td className={`px-6 py-4 font-bold ${t.type === 'income' ? 'text-green-400' : 'text-red-400'}`}>{t.type === 'income' ? '+' : '-'} {formatCurrency(t.amount)}</td>
+                                                            <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                                                <ActionButton onClick={()=>{setEditingItem(t); setTransactionFormData(t); setIsTransactionModalOpen(true);}} color="slate" icon={Edit} />
+                                                                <ActionButton onClick={()=>handleDeleteTransaction(t.id)} color="red" icon={Trash2} />
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* MODAL DE TRANSAÇÃO */}
+                            {isTransactionModalOpen && (
+                                <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm">
+                                    <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 relative">
+                                        <button onClick={()=>setIsTransactionModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400"><XCircle size={20}/></button>
+                                        <h3 className="font-bold text-white text-xl mb-6">{editingItem ? 'Editar Transação' : 'Nova Transação'}</h3>
+                                        <form onSubmit={handleSaveTransaction} className="space-y-4">
+                                            <div className="flex gap-2 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                                                <button type="button" onClick={()=>setTransactionFormData({...transactionFormData, type: 'income'})} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${transactionFormData.type === 'income' ? 'bg-green-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Entrada</button>
+                                                <button type="button" onClick={()=>setTransactionFormData({...transactionFormData, type: 'expense'})} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${transactionFormData.type === 'expense' ? 'bg-red-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Saída</button>
+                                            </div>
+                                            <div><label className="text-xs font-bold text-slate-500 ml-1">DESCRIÇÃO</label><input required value={transactionFormData.description} onChange={e=>setTransactionFormData({...transactionFormData, description: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none" placeholder="Ex: Venda Plano Anual"/></div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div><label className="text-xs font-bold text-slate-500 ml-1">VALOR</label><input type="number" step="0.01" required value={transactionFormData.amount} onChange={e=>setTransactionFormData({...transactionFormData, amount: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
+                                                <div><label className="text-xs font-bold text-slate-500 ml-1">DATA</label><input type="date" required value={transactionFormData.date} onChange={e=>setTransactionFormData({...transactionFormData, date: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
+                                            </div>
+                                            <div><label className="text-xs font-bold text-slate-500 ml-1">CATEGORIA</label><select value={transactionFormData.category} onChange={e=>setTransactionFormData({...transactionFormData, category: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none">
+                                                <option>Mensalidade</option><option>Venda Direta</option><option>Custo Painel</option><option>Marketing</option><option>Servidor</option><option>Outros</option>
+                                            </select></div>
+                                            <button type="submit" disabled={isProcessing} className="w-full bg-green-600 hover:bg-green-500 py-3.5 rounded-xl font-bold text-white">{isProcessing ? <LoadingSpinner /> : 'Salvar Lançamento'}</button>
+                                        </form>
+                                    </div>
                                 </div>
                             )}
 
                             {activeTab === 'clients' && (
                                 <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col">
-                                    {/* ATUALIZAÇÃO: Removido h-[calc(100vh-200px)] para unificar rolagem. */}
                                     <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row gap-4 bg-slate-900 z-10">
                                         <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 text-white outline-none text-sm" /></div>
-                                        {/* ATUALIZAÇÃO: Filtros com contagem e adição do filtro 'Vencidos' */}
                                         <div className="flex gap-2 overflow-x-auto">
                                             <button onClick={()=>setFilterStatus('all')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${filterStatus==='all'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Todos ({stats.total})</button>
                                             <button onClick={()=>setFilterStatus('active')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${filterStatus==='active'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Ativos ({stats.active})</button>
                                             <button onClick={()=>setFilterStatus('expired')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${filterStatus==='expired'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Vencidos ({stats.expired})</button>
                                         </div>
                                     </div>
-                                    <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
-                                        <div className="text-sm">{selectedClients.length > 0 ? `${selectedClients.length} selecionados` : 'Selecione clientes'}</div>
-                                        <div className="flex gap-2">
-                                            {isAnySelected && <button onClick={handleDeleteSelectedClients} className="text-red-400 text-sm font-bold flex items-center gap-1"><Trash2 size={16}/> Excluir</button>}
-                                            <button onClick={handleDeleteAllClients} className="text-red-400 text-sm font-bold flex items-center gap-1"><Ban size={16}/> Todos</button>
-                                        </div>
-                                    </div>
-                                    {/* ATUALIZAÇÃO: Removido overflow-auto daqui. A rolagem é do main. */}
                                     <div className="overflow-x-auto w-full"> 
                                         <table className="w-full text-left text-sm text-slate-400">
-                                            <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10"><tr><th className="px-6 py-4 w-10"><input type="checkbox" checked={filteredClients.length > 0 && selectedClients.length === filteredClients.length} onChange={handleSelectAllClients} className="rounded bg-slate-800 border-slate-700"/></th><th className="px-6 py-4">Nome</th><th className="px-6 py-4">Vencimento</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
+                                            <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10"><tr><th className="px-6 py-4">Nome</th><th className="px-6 py-4">Vencimento</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
                                             <tbody className="divide-y divide-slate-800">{filteredClients.map(client => {
                                                 const statusData = getClientStatus(client.dueDate);
-                                                const colorClass = statusColorMap[statusData.status] || statusColorMap.no_date; // Mapeia para a classe Tailwind
+                                                const colorClass = statusColorMap[statusData.status] || statusColorMap.no_date; 
                                                 return (
                                                     <tr key={client.id} className="hover:bg-slate-800/30">
-                                                        <td className="px-6 py-4"><input type="checkbox" checked={selectedClients.includes(client.id)} onChange={() => handleSelectClient(client.id)} className="rounded bg-slate-800 border-slate-700"/></td>
-                                                        {/* ALTERAÇÃO AQUI: Adicionado border-l-4 e a classe de cor na coluna do nome */}
                                                         <td className={`px-6 py-4 font-bold text-white whitespace-nowrap border-l-4 ${colorClass}`}>{client.name}</td>
                                                         <td className="px-6 py-4 whitespace-nowrap">{formatDate(client.dueDate)}</td>
-                                                        {/* ATUALIZAÇÃO: Exibe o status inteligente com os dias */}
                                                         <td className="px-6 py-4 whitespace-nowrap"><span className={`text-${statusData.color}-400 bg-${statusData.color}-500/10 px-2 py-1 rounded text-xs`}>{statusData.label}</span></td>
                                                         <td className="px-6 py-4 text-right flex justify-end gap-2 whitespace-nowrap">
                                                             <ActionButton onClick={() => {setViewingItem(client); setIsViewModalOpen(true);}} color="orange" icon={Eye} />
-                                                            {/* CORREÇÃO: Abre o modal de mensagem corretamente. */}
                                                             {client.whatsapp && botSession?.status === 'connected' && <ActionButton onClick={() => handleOpenMessageModal(client, 'client')} color="purple" icon={Send} />}
                                                             <ActionButton onClick={()=>handleRenew(client, 'client')} color="blue" icon={RefreshCw} />
                                                             <ActionButton onClick={()=>{setEditingItem(client); setFormData(client); setModalType('client'); setIsAddModalOpen(true);}} color="slate" icon={Edit} />
@@ -1415,46 +1049,13 @@
 
                             {activeTab === 'team' && (
                                 <div className="h-full">
-                                    {/* ATUALIZAÇÃO: Bloqueio visual para Revenda comum */}
                                     {!isTeamViewer ? (
-                                        <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] text-center space-y-4 bg-slate-900 rounded-2xl border border-orange-800 p-8 shadow-xl">
-                                            <Lock size={64} className="text-orange-500 animate-bounce-slow" />
-                                            <h2 className="text-3xl font-bold text-white">ACESSO RESTRITO</h2>
-                                            <p className="text-slate-400 max-w-sm">Esta é uma funcionalidade **exclusiva** para painéis Master ou CEO.</p>
-                                            <p className="text-orange-400 font-bold">Vire Master agora mesmo para gerenciar sua própria equipe!</p>
-                                        </div>
+                                        <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] text-center space-y-4 bg-slate-900 rounded-2xl border border-orange-800 p-8 shadow-xl"><Lock size={64} className="text-orange-500 animate-bounce-slow" /><h2 className="text-3xl font-bold text-white">ACESSO RESTRITO</h2><p className="text-slate-400 max-w-sm">Esta é uma funcionalidade **exclusiva** para painéis Master ou CEO.</p></div>
                                     ) : (
                                         <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col h-[calc(100vh-200px)]">
-                                            <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row gap-4 bg-slate-900 z-10">
-                                                <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" value={searchTeamTerm} onChange={(e) => setSearchTeamTerm(e.target.value)} placeholder="Buscar..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 text-white outline-none text-sm" /></div>
-                                                {/* ATUALIZAÇÃO: Filtros para Master/Revenda com contagem */}
-                                                <div className="flex gap-2 overflow-x-auto">
-                                                    <button onClick={()=>setTeamFilter('all')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='all'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Todos ({teamStats.total})</button>
-                                                    <button onClick={()=>setTeamFilter('master')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='master'?'bg-purple-500':'bg-slate-800 text-slate-400'}`}>Master ({teamStats.master})</button>
-                                                    <button onClick={()=>setTeamFilter('reseller')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='reseller'?'bg-blue-500':'bg-slate-800 text-slate-400'}`}>Revenda ({teamStats.reseller})</button>
-                                                </div>
-                                            </div>
+                                            <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row gap-4 bg-slate-900 z-10"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" value={searchTeamTerm} onChange={(e) => setSearchTeamTerm(e.target.value)} placeholder="Buscar..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 text-white outline-none text-sm" /></div><div className="flex gap-2 overflow-x-auto"><button onClick={()=>setTeamFilter('all')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='all'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Todos</button><button onClick={()=>setTeamFilter('master')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='master'?'bg-purple-500':'bg-slate-800 text-slate-400'}`}>Master</button><button onClick={()=>setTeamFilter('reseller')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='reseller'?'bg-blue-500':'bg-slate-800 text-slate-400'}`}>Revenda</button></div></div>
                                             <div className="overflow-auto flex-1">
-                                                <table className="w-full text-left text-sm text-slate-400">
-                                                    <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10"><tr><th className="px-6 py-4">Nome</th><th className="px-6 py-4">Cargo</th><th className="px-6 py-4">Painel</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
-                                                    <tbody className="divide-y divide-slate-800">{filteredTeam.map(member => (
-                                                        <tr key={member.id} className="hover:bg-slate-800/30">
-                                                            <td className="px-6 py-4 font-bold text-white">{member.name}</td>
-                                                            <td className="px-6 py-4"><RoleBadge role={member.role} /></td>
-                                                            <td className="px-6 py-4">{isPanelExpired(member.panelExpiration) ? 'Expirado' : `${getDaysLeft(member.panelExpiration)}d`}</td>
-                                                            <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                                                <ActionButton onClick={() => {setViewingItem(member); setIsViewModalOpen(true);}} color="orange" icon={Eye} />
-                                                                {/* ATUALIZAÇÃO: Botão de Ajustar Dias (Master/CEO) */}
-                                                                {(user.role === 'ceo' || user.role === 'master') && (
-                                                                    <ActionButton onClick={()=>{setEditingItem(member); setModalType('user'); setIsPanelExpModalOpen(true);}} color="yellow" icon={Clock} title="Ajustar Dias" />
-                                                                )}
-                                                                <ActionButton onClick={()=>handleRenew(member, 'user')} color="blue" icon={RefreshCw} />
-                                                                <ActionButton onClick={()=>{setEditingItem(member); setFormData(member); setNewMemberRole(member.role); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} />
-                                                                <ActionButton onClick={()=>handleDelete(member.id, 'user')} color="red" icon={Trash2} />
-                                                            </td>
-                                                        </tr>
-                                                    ))}</tbody>
-                                                </table>
+                                                <table className="w-full text-left text-sm text-slate-400"><thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10"><tr><th className="px-6 py-4">Nome</th><th className="px-6 py-4">Cargo</th><th className="px-6 py-4">Painel</th><th className="px-6 py-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-800">{team.filter(t => {const matchS=t.name?.toLowerCase().includes(searchTeamTerm.toLowerCase()); const matchR=teamFilter==='all'?true:t.role===teamFilter; return matchS&&matchR;}).map(member => (<tr key={member.id} className="hover:bg-slate-800/30"><td className="px-6 py-4 font-bold text-white">{member.name}</td><td className="px-6 py-4"><RoleBadge role={member.role} /></td><td className="px-6 py-4">{isPanelExpired(member.panelExpiration) ? 'Expirado' : `${getDaysLeft(member.panelExpiration)}d`}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><ActionButton onClick={() => {setViewingItem(member); setIsViewModalOpen(true);}} color="orange" icon={Eye} />{(user.role === 'ceo' || user.role === 'master') && <ActionButton onClick={()=>{setEditingItem(member); setModalType('user'); setIsPanelExpModalOpen(true);}} color="yellow" icon={Clock} title="Ajustar Dias" />}<ActionButton onClick={()=>handleRenew(member, 'user')} color="blue" icon={RefreshCw} /><ActionButton onClick={()=>{setEditingItem(member); setFormData(member); setNewMemberRole(member.role); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} /><ActionButton onClick={()=>handleDelete(member.id, 'user')} color="red" icon={Trash2} /></td></tr>))}</tbody></table>
                                             </div>
                                         </div>
                                     )}
@@ -1701,8 +1302,8 @@
                                                             <div>
                                                                 <label className="text-xs font-bold text-slate-300">Contato Geral</label>
                                                                 <textarea rows="4" 
-                                                                    value={msgTemplates.team?.['team_contact'] || `Olá *{nome_revenda}*, sou o Master *{master}*.\n\nPrecisamos conversar sobre o painel. Favor responder assim que possível.`} 
-                                                                    onChange={(e) => setMsgTemplates({...msgTemplates, team: {...msgTemplates.team, ['team_contact']: e.target.value}})} 
+                                                                    value={msgTemplates?.team?.['team_contact'] || `Olá *{nome_revenda}*, sou o Master *{master}*.\n\nPrecisamos conversar sobre o painel. Favor responder assim que possível.`} 
+                                                                    onChange={(e) => setMsgTemplates(prev => ({...prev, team: {...(prev.team || {}), ['team_contact']: e.target.value}}))} 
                                                                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none"
                                                                 />
                                                             </div>
@@ -1728,45 +1329,28 @@
                                     )}
                                 </div>
                             )}
+
+                            {isAddModalOpen && (
+                                <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+                                    <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 relative">
+                                        <button onClick={()=>setIsAddModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400"><XCircle size={20}/></button>
+                                        <h3 className="font-bold text-white text-xl mb-6">{editingItem ? 'Editar' : 'Novo'}</h3>
+                                        <form onSubmit={handleSaveItem} className="space-y-4">
+                                            <div><label className="text-xs font-bold text-slate-500 ml-1">NOME</label><input required value={formData.name||''} onChange={e=>setFormData({...formData,name:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
+                                            {modalType === 'client' ? (
+                                                <><div><label className="text-xs font-bold text-slate-500 ml-1">WHATSAPP</label><input value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div><div className="grid grid-cols-2 gap-4"><div><label className="text-xs font-bold text-slate-500 ml-1">VENCIMENTO</label><input type="date" required value={formData.dueDate||''} onChange={e=>setFormData({...formData,dueDate:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div><div><label className="text-xs font-bold text-emerald-500 ml-1">VALOR</label><input type="number" step="0.01" value={formData.value||''} onChange={e=>setFormData({...formData,value:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div></div><div><label className="text-xs font-bold text-slate-500 ml-1">OBS</label><textarea rows="2" value={formData.observation||''} onChange={e=>setFormData({...formData,observation:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div></>
+                                            ) : (
+                                                <><div><label className="text-xs font-bold text-slate-500 ml-1">EMAIL</label><input required type="email" value={formData.email||''} disabled={!!editingItem} onChange={e=>setFormData({...formData,email:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none disabled:opacity-50"/></div><div><label className="text-xs font-bold text-slate-500 ml-1">WHATSAPP</label><input value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>{user.role === 'ceo' && (<div className="flex gap-2"><button type="button" onClick={() => setNewMemberRole('master')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'master' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Master</button><button type="button" onClick={() => setNewMemberRole('reseller')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'reseller' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Revenda</button></div>)}</>
+                                            )}
+                                            <button type="submit" disabled={isProcessing} className="w-full bg-orange-600 hover:bg-orange-500 py-3.5 rounded-xl font-bold text-white">{isProcessing ? <LoadingSpinner /> : 'Salvar'}</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
-                        {isAddModalOpen && (
-                            <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
-                                <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 relative">
-                                    <button onClick={()=>setIsAddModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400"><XCircle size={20}/></button>
-                                    <h3 className="font-bold text-white text-xl mb-6">{editingItem ? 'Editar' : 'Novo'}</h3>
-                                    <form onSubmit={handleSaveItem} className="space-y-4">
-                                        <div><label className="text-xs font-bold text-slate-500 ml-1">NOME</label><input required value={formData.name||''} onChange={e=>setFormData({...formData,name:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
-                                        {modalType === 'client' ? (
-                                            <>
-                                                <div><label className="text-xs font-bold text-slate-500 ml-1">WHATSAPP</label><input value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div><label className="text-xs font-bold text-slate-500 ml-1">VENCIMENTO</label><input type="date" required value={formData.dueDate||''} onChange={e=>setFormData({...formData,dueDate:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
-                                                    <div><label className="text-xs font-bold text-emerald-500 ml-1">VALOR</label><input type="number" step="0.01" value={formData.value||''} onChange={e=>setFormData({...formData,value:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
-                                                </div>
-                                                <div><label className="text-xs font-bold text-slate-500 ml-1">LOGIN</label><input value={formData.username||''} onChange={e=>setFormData({...formData,username:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
-                                                <div><label className="text-xs font-bold text-slate-500 ml-1">OBS</label><textarea rows="2" value={formData.observation||''} onChange={e=>setFormData({...formData,observation:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <div><label className="text-xs font-bold text-slate-500 ml-1">EMAIL</label><input required type="email" value={formData.email||''} disabled={!!editingItem} onChange={e=>setFormData({...formData,email:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none disabled:opacity-50"/></div>
-                                                <div><label className="text-xs font-bold text-slate-500 ml-1">WHATSAPP</label><input value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
-                                                {user.role === 'ceo' && (
-                                                    <div className="flex gap-2">
-                                                        <button type="button" onClick={() => setNewMemberRole('master')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'master' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Master</button>
-                                                        <button type="button" onClick={() => setNewMemberRole('reseller')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'reseller' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Revenda</button>
-                                                    </div>
-                                                )}
-                                            </>
-                                        )}
-                                        <button type="submit" disabled={isProcessing} className="w-full bg-orange-600 hover:bg-orange-500 py-3.5 rounded-xl font-bold text-white">{isProcessing ? <LoadingSpinner /> : 'Salvar'}</button>
-                                    </form>
-                                </div>
-                            </div>
-                        )}
-
                         <div className="md:hidden fixed bottom-0 w-full bg-slate-900 border-t border-slate-800 flex justify-around items-center z-40 pb-safe shadow-[0_-5px_20px_rgba(0,0,0,0.5)]">
-                            {[ {id:'dashboard', icon:LayoutDashboard, l:'Início'}, {id:'clients', icon:UserPlus, l:'Clientes'}, {id:'team', icon:Shield, l:'Equipe'}, {id:'ai', icon:Sparkles, l:'IA', c:'text-purple-500'}, {id:'settings', icon:Settings, l:'Config'} ].map(btn => (
+                            {[ {id:'dashboard', icon:LayoutDashboard, l:'Início'}, {id:'clients', icon:UserPlus, l:'Clientes'}, {id:'financial', icon:DollarSign, l:'Financeiro', c: 'text-green-500'}, {id:'team', icon:Shield, l:'Equipe'}, {id:'ai', icon:Sparkles, l:'IA', c:'text-purple-500'} ].map(btn => (
                                 <button key={btn.id} onClick={() => {setActiveTab(btn.id); if(btn.id==='settings') setSettingsView('menu'); if(btn.id==='ai') setAiView('menu');}} className={`flex flex-col items-center justify-center w-full py-3 transition-colors ${activeTab === btn.id ? (btn.c || 'text-orange-500') : 'text-slate-500'}`}><btn.icon size={22} /><span className="text-[10px] font-bold mt-1">{btn.l}</span></button>
                             ))}
                         </div>
@@ -1776,12 +1360,7 @@
         };
 
         const root = createRoot(document.getElementById('root'));
-        // ATUALIZAÇÃO: Root blindado com Error Boundary
-        root.render(
-            <ErrorBoundary>
-                <FireTVManager />
-            </ErrorBoundary>
-        );
+        root.render(<ErrorBoundary><FireTVManager /></ErrorBoundary>);
     </script>
 </body>
 </html>
