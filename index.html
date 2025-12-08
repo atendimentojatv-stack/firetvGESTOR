@@ -22,11 +22,14 @@
                         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                         'bounce-slow': 'bounce 2s infinite',
                         'glow': 'glow 2s ease-in-out infinite alternate',
+                        // NOVO: Animação de pulsação mais focada para o verde
+                        'pulse-green': 'pulse-custom 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
                     },
                     keyframes: {
                         fadeIn: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
                         slideIn: { '0%': { transform: 'translateX(100%)' }, '100%': { transform: 'translateX(0)' } },
-                        glow: { '0%': { boxShadow: '0 0 20px rgba(249, 115, 22, 0.5)' }, '100%': { boxShadow: '0 0 40px rgba(249, 115, 22, 0.8), 0 0 10px rgba(255,255,255,0.5)' } }
+                        glow: { '0%': { boxShadow: '0 0 20px rgba(249, 115, 22, 0.5)' }, '100%': { boxShadow: '0 0 40px rgba(249, 115, 22, 0.8), 0 0 10px rgba(255,255,255,0.5)' } },
+                        'pulse-custom': { '0%, 100%': { opacity: '1', boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.7)' }, '50%': { opacity: '0.8', boxShadow: '0 0 0 10px rgba(16, 185, 129, 0)' } }
                     }
                 }
             }
@@ -101,12 +104,6 @@
                             <AlertTriangle size={64} className="text-red-600 mb-6 animate-pulse" />
                             <h2 className="text-3xl font-black text-white mb-2">ERRO CRÍTICO</h2>
                             <p className="text-slate-400 mb-8">O sistema encontrou um erro fatal ao carregar.</p>
-                            <div className="bg-black/80 p-6 rounded-xl border border-red-900/50 text-left w-full max-w-2xl overflow-auto mb-8">
-                                <p className="text-red-500 font-bold text-sm mb-2">DETALHES TÉCNICOS:</p>
-                                <code className="text-red-300 text-xs font-mono block break-all">
-                                    {this.state.error?.toString()}
-                                </code>
-                            </div>
                             <button onClick={() => window.location.reload()} className="bg-red-600 hover:bg-red-500 text-white px-8 py-4 rounded-xl font-bold transition-all shadow-lg shadow-red-900/20">TENTAR RECARREGAR</button>
                         </div>
                     );
@@ -116,7 +113,7 @@
         }
 
         // --- CONFIGURAÇÃO API ---
-        const defaultApiKey = "AIzaSyCmbxg1nkPP2L_JRSsNN9uesaybciKQV70"; 
+        const defaultApiKey = "AIzaSyCmbxg1nkPP2L_JRSsNN9uesayciKQV70"; 
         
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "AIzaSyClcK67ZPEC-4uky5y6RIYCyKF4BqO3xcE",
@@ -149,6 +146,15 @@
                 return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(date); 
             } catch { return '-'; } 
         };
+        // Novo utilitário para formatar data e hora (para o comprovante)
+        const formatDateTime = (date) => {
+            try {
+                if (!date) return '-'; 
+                const d = date instanceof Date ? date : new Date(date);
+                return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(d);
+            } catch { return '-'; } 
+        };
+
 
         const formatCurrency = (val) => { try { return (parseFloat(val) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); } catch { return 'R$ 0,00'; } };
         const getDaysLeft = (expirationDate) => { try { if (!expirationDate) return 0; const end = typeof expirationDate === 'object' && expirationDate.toDate ? expirationDate.toDate() : new Date(expirationDate); const now = new Date(); if (isNaN(end.getTime())) return 0; return Math.ceil((end - now) / (1000 * 60 * 60 * 24)); } catch { return 0; } };
@@ -168,25 +174,55 @@
                 
                 if (diffDays < 0) {
                     const absDays = Math.abs(diffDays);
-                    return { status: 'expired', label: `Vencido (-${absDays} dias)`, color: 'red', days: diffDays };
+                    return { status: 'expired', label: `Vencido (há ${absDays} dias)`, color: 'red', days: diffDays };
                 }
                 if (diffDays === 0) return { status: 'today', label: `Vence HOJE (0 dias)`, color: 'orange', days: 0 };
                 if (diffDays <= 3) return { status: 'expiring', label: `Ativo (Vence em ${diffDays} dias)`, color: 'yellow', days: diffDays };
-                return { status: 'active', label: `Ativo (Vence em ${diffDays} dias)`, color: 'green', days: diffDays };
+                return { status: 'active', label: `Ativo (restam ${diffDays} dias)`, color: 'green', days: diffDays };
             } catch (e) { return { status: 'no_date', label: 'Erro', color: 'slate' }; }
         };
+        
+        // ATUALIZADO: Função para obter status de expiração do painel (para revendas) com cores e textos uniformes.
+        const getPanelExpirationStatus = (expirationDate) => {
+            const days = getDaysLeft(expirationDate);
+            
+            // Vencido (RED)
+            if (days < 0) { 
+                const absDays = Math.abs(days);
+                return { status: 'expired', label: `Vencido (há ${absDays} dias)`, color: 'red', days };
+            }
+            // Vence HOJE (ORANGE)
+            if (days === 0) return { status: 'today', label: `Vence HOJE (0 dias)`, color: 'orange', days: 0 }; 
+            // Pré-vencimento (YELLOW)
+            if (days <= 3) return { status: 'expiring', label: `Vence em ${days} dias`, color: 'yellow', days }; 
+            // Ativo (GREEN)
+            return { status: 'active', label: `Ativo (restam ${days} dias)`, color: 'green', days }; 
+        };
+
 
         const generateWhatsAppMessage = (item, userSettings, type = 'client', statusOverride) => {
             if (!item) return "";
             const isClient = type === 'client';
-            const statusData = isClient ? getClientStatus(item.dueDate) : { status: 'team_contact', days: 0 }; 
+            const statusData = isClient ? getClientStatus(item.dueDate) : getPanelExpirationStatus(item.panelExpiration);
             const status = statusOverride || statusData.status;
             const days = statusData.days;
             const company = userSettings?.companyName || "Fire Gestor";
             const templates = userSettings?.messageTemplates?.[type] || {}; 
             
             const clientVars = { '{nome}': item.name || '', '{vencimento}': isClient ? formatDate(item.dueDate) : '', '{dias}': isClient ? Math.abs(days) : '', '{valor}': isClient ? formatCurrency(item.value || 0) : '', '{empresa}': company };
-            const teamVars = { '{nome_revenda}': item.name || '', '{master}': userSettings.name || 'Master', '{email_revenda}': item.email || '', '{whatsapp_revenda}': item.whatsapp || '', '{valor_pago}': formatCurrency(item.valuePaid || 0) };
+            
+            // Variáveis expandidas para Revendas
+            const panelExpStatus = getPanelExpirationStatus(item.panelExpiration);
+            const teamVars = { 
+                '{nome_revenda}': item.name || '', 
+                '{master}': userSettings.name || 'Master', 
+                '{email_revenda}': item.email || '', 
+                '{whatsapp_revenda}': item.whatsapp || '', 
+                '{valor_pago}': formatCurrency(item.valuePaid || 0),
+                '{vencimento_painel}': formatDate(item.panelExpiration),
+                '{dias_restantes}': panelExpStatus.days > 0 ? panelExpStatus.days : Math.abs(panelExpStatus.days),
+                '{plano_revenda}': item.plan || 'Trial'
+            };
 
             const defaultGreeting = `Olá *{nome}*, tudo bem? Aqui é do *{empresa}*.\n\n`;
             
@@ -199,15 +235,25 @@
                 no_date: defaultGreeting + `Seu plano ({valor}) está com data de vencimento pendente. Por favor, verifique.`,
                 no_status: defaultGreeting + `Seu plano ({valor}) está ativo.`
             };
-            const teamDefault = templates.team?.team_contact || `Olá *{nome_revenda}*, sou o Master *{master}*.\n\nPrecisamos conversar sobre o painel. Favor responder assim que possível.`;
+            
+            // NOVO: Templates de Revenda/Painel
+            const teamDefaults = {
+                team_contact: templates.team?.team_contact || `Olá *{nome_revenda}*, sou o Master *{master}*.\n\nPrecisamos conversar sobre o painel. Favor responder assim que possível.`,
+                panel_expiring: templates.team?.panel_expiring || `⚠️ *ATENÇÃO, {nome_revenda}!* Seu painel Revenda ({plano_revenda}) vence em *{dias_restantes} dias* ({vencimento_painel}).\n\nPor favor, entre em contato com seu Master ({master}) para renovação e evite o bloqueio.`,
+                panel_expired: templates.team?.panel_expired || `❌ *PAINEL EXPIRADO, {nome_revenda}!* Seu acesso ({plano_revenda}) está bloqueado há {dias_restantes} dias ({vencimento_painel}).\n\nContate seu Master ({master}) imediatamente para reativação.`,
+                panel_renew_success: templates.team?.panel_renew_success || `✅ *RENOVAÇÃO DE PAINEL CONCLUÍDA!* O painel de {nome_revenda} ({plano_revenda}) foi renovado e agora está ativo até *{vencimento_painel}*.\n\nObrigado pela confiança!`,
+            };
 
-            let template = isClient ? (clientDefaults[status] || clientDefaults.active) : (teamDefault);
+
+            let template = isClient ? (clientDefaults[status] || clientDefaults.active) : (teamDefaults[status] || teamDefaults.team_contact);
             let message = template;
             
-            if (isClient) for (const key in clientVars) message = message.replace(new RegExp(key, 'g'), clientVars[key]);
-            if (!isClient) for (const key in teamVars) message = message.replace(new RegExp(key, 'g'), teamVars[key]);
-            if (!isClient) for (const key in clientVars) message = message.replace(new RegExp(key, 'g'), '');
-            if (isClient) for (const key in teamVars) message = message.replace(new RegExp(key, 'g'), '');
+            // Substituição de variáveis
+            const allVars = { ...clientVars, ...teamVars };
+            for (const key in allVars) {
+                 message = message.replace(new RegExp(key, 'g'), allVars[key]);
+            }
+            
             return message;
         };
 
@@ -290,6 +336,111 @@
                 {children}
             </div>
         );
+        
+        // NOVO COMPONENTE: MODAL DE SUCESSO DE REGISTRO
+        const RegistrationSuccessModal = ({ setShowRegistrationSuccess }) => {
+            return (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-slate-900 border border-green-600 w-full max-w-xl rounded-2xl p-8 relative shadow-2xl shadow-green-900/50">
+                        
+                        <div className="text-center mb-6">
+                            {/* Icone pulsante e chamativo */}
+                            <div className="w-20 h-20 bg-green-600/20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-green-600 animate-pulse-custom">
+                                <CheckCircle size={40} className="text-green-400" />
+                            </div>
+                            
+                            <h2 className="text-3xl font-black text-white mb-2">SUCESSO! Ativação Pendente</h2>
+                            <p className="text-green-400 text-lg font-semibold">Seu teste GRÁTIS de 7 dias está PRONTO para começar!</p>
+                        </div>
+
+                        <div className="bg-slate-800 p-6 rounded-xl border border-green-700 space-y-4">
+                            <p className="text-white font-bold text-center text-lg flex items-center justify-center gap-2"><Zap size={20} className="text-yellow-400"/> Passos CRUCIAIS para Iniciar:</p>
+                            <ol className="list-decimal list-inside text-sm text-slate-300 space-y-3 pl-4">
+                                <li>A sua conta foi **PRÉ-CRIADA** para validação.</li>
+                                <li>Por favor, **ABRA O E-MAIL** que você cadastrou (Gmail, Outlook, etc.).</li>
+                                <li>**PROCURA** pela mensagem com o título escrito: **<span className="text-green-400 font-bold">FIRE-GESTOR</span>**.</li>
+                                <li><span className="text-yellow-400 font-semibold">ATENÇÃO:</span> Se não achar na aba principal, **CERTEZA** que estará na aba de **SPAM/Lixo Eletrônico**.</li>
+                                <li>Clique no e-mail, depois clique no **LINK** e na **CAIXINHA AZUL** para verificar sua conta.</li>
+                                <li>Depois da verificação, **VOLTE** aqui no Gestor de Clientes.</li>
+                                <li>Clique em **<span className="text-orange-400 font-bold">ENTRAR</span>**, insira o E-mail e a Senha que você acabou de cadastrar.</li>
+                            </ol>
+                            <p className="text-center font-bold text-lg text-green-400 pt-2">PRONTO! Desfrute do melhor gestor de clientes por 7 dias!</p>
+                        </div>
+                        
+                        <button onClick={() => setShowRegistrationSuccess(false)} className="mt-8 w-full bg-orange-600 hover:bg-orange-500 text-white font-bold text-lg py-4 rounded-xl transition-all shadow-lg shadow-orange-900/50">
+                            ENTENDI, VOU VERIFICAR O E-MAIL
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+        
+        // MODAL DE SUCESSO DE RENOVAÇÃO (CLIENTE)
+        const RenewalSuccessModal = ({ item, onClose, formatCurrency, formatDateTime }) => {
+            if (!item || !item.isClient) return null;
+
+            return (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-slate-900 border border-emerald-600 w-full max-w-sm rounded-2xl p-6 relative shadow-2xl shadow-emerald-900/50">
+                        <div className="text-center mb-6">
+                            <div className="w-20 h-20 bg-emerald-600/20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-emerald-600 animate-pulse-green">
+                                <CheckCircle size={40} className="text-emerald-400" />
+                            </div>
+                            <h2 className="text-3xl font-black text-white mb-2">RENOVADO COM SUCESSO!</h2>
+                            <p className="text-emerald-400 text-lg font-semibold">Comprovante de Renovação de Cliente</p>
+                        </div>
+
+                        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
+                            <div className="flex justify-between border-b border-slate-700 pb-2"><span className="text-slate-400">Cliente:</span><span className="text-white font-bold">{item.name}</span></div>
+                            <div className="flex justify-between border-b border-slate-700 pb-2"><span className="text-slate-400">Valor Lançado:</span><span className="text-green-400 font-bold">{formatCurrency(item.value)}</span></div>
+                            <div className="flex justify-between border-b border-slate-700 pb-2"><span className="text-slate-400">Nova Data de Vencimento:</span><span className="text-yellow-400 font-bold">{formatDate(item.dueDate)}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-400">Data e Hora da Ação:</span><span className="text-slate-300 text-sm">{formatDateTime(new Date())}</span></div>
+                        </div>
+
+                        <button onClick={onClose} className="mt-8 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-lg py-3 rounded-xl transition-all shadow-lg shadow-emerald-900/50">
+                            FECHAR / CONTINUAR
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+        
+        // NOVO COMPONENTE: MODAL DE SUCESSO DE RENOVAÇÃO (REVENDA)
+        const PanelRenewalSuccessModal = ({ item, onClose, formatDateTime }) => {
+            if (!item || item.isClient) return null;
+            const newExpDate = getDaysLeft(item.panelExpiration) > 0 ? formatDate(item.panelExpiration) : 'Erro de Data';
+            // Valor pago pelo revenda (assumindo que o campo valuePaid existe no objeto item/usuário)
+            const valuePaid = item.valuePaid || 0; 
+            const formattedValue = valuePaid > 0 ? formatCurrency(valuePaid) : 'N/A';
+
+            return (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-slate-900 border border-purple-600 w-full max-w-sm rounded-2xl p-6 relative shadow-2xl shadow-purple-900/50">
+                        <div className="text-center mb-6">
+                            <div className="w-20 h-20 bg-purple-600/20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-purple-600 animate-pulse-green">
+                                <Shield size={40} className="text-purple-400" />
+                            </div>
+                            <h2 className="text-3xl font-black text-white mb-2">PAINEL PRORROGADO!</h2>
+                            <p className="text-purple-400 text-lg font-semibold">Comprovante de Renovação de Painel</p>
+                        </div>
+
+                        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
+                            <div className="flex justify-between border-b border-slate-700 pb-2"><span className="text-slate-400">Revenda:</span><span className="text-white font-bold">{item.name}</span></div>
+                            <div className="flex justify-between border-b border-slate-700 pb-2"><span className="text-slate-400">Cargo:</span><span className="text-blue-400 font-bold">{item.role === 'master' ? 'Master' : 'Revenda'}</span></div>
+                            <div className="flex justify-between border-b border-slate-700 pb-2"><span className="text-slate-400">Valor Recebido:</span><span className={`font-bold ${valuePaid > 0 ? 'text-green-400' : 'text-slate-400'}`}>{formattedValue}</span></div>
+                            <div className="flex justify-between border-b border-slate-700 pb-2"><span className="text-slate-400">Nova Expiração:</span><span className="text-yellow-400 font-bold">{newExpDate}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-400">Data e Hora da Ação:</span><span className="text-slate-300 text-sm">{formatDateTime(new Date())}</span></div>
+                        </div>
+
+                        <button onClick={onClose} className="mt-8 w-full bg-purple-600 hover:bg-purple-500 text-white font-bold text-lg py-3 rounded-xl transition-all shadow-lg shadow-purple-900/50">
+                            FECHAR / CONTINUAR
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+        // --- FIM DOS COMPONENTES DE MODAL ---
+
 
         // --- COMPONENTES DE MODAL ---
         const MessageModal = React.memo(({ messageClient, messageEdit, setMessageEdit, isProcessing, setIsMessageModalOpen, showToast, sendBotMessageFromModal }) => {
@@ -321,7 +472,23 @@
                         <h3 className="font-bold text-white text-xl mb-4 flex items-center gap-2"><Info size={20} className="text-orange-500"/> Detalhes</h3>
                         <div className="space-y-4 text-sm">
                             <div className="grid grid-cols-2 gap-4"><InfoField label="Nome" value={viewingItem.name} icon={UserPlus} /><InfoField label="WhatsApp" value={viewingItem.whatsapp} icon={Smartphone} /></div>
-                            {isClient ? <><div className="grid grid-cols-2 gap-4"><InfoField label="Vencimento" value={formatDate(viewingItem.dueDate)} icon={Calendar} /><InfoField label="Valor" value={formatCurrency(viewingItem.value)} icon={DollarSign} /></div><InfoField label="Login" value={viewingItem.username} icon={Wifi} /></> : <><InfoField label="Email" value={viewingItem.email} icon={Mail} /><InfoField label="Expiração" value={formatDate(viewingItem.panelExpiration)} icon={Clock} /></>}
+                            {isClient ? (
+                                <>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <InfoField label="Vencimento" value={formatDate(viewingItem.dueDate)} icon={Calendar} />
+                                        <InfoField label="Valor Mensal" value={formatCurrency(viewingItem.value)} icon={DollarSign} color="text-emerald-400" /> {/* ATUALIZADO */}
+                                    </div>
+                                    <InfoField label="Login" value={viewingItem.username} icon={Wifi} />
+                                </>
+                            ) : (
+                                <>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <InfoField label="Email" value={viewingItem.email} icon={Mail} />
+                                        <InfoField label="Valor Painel" value={formatCurrency(viewingItem.valuePaid)} icon={DollarSign} color="text-purple-400" /> {/* ATUALIZADO */}
+                                    </div>
+                                    <InfoField label="Expiração" value={formatDate(viewingItem.panelExpiration)} icon={Clock} />
+                                </>
+                            )}
                             <div className="pt-4 border-t border-slate-800"><InfoField label="Observação" value={viewingItem.observation || 'Nenhuma'} icon={FileText} fullWidth /></div>
                         </div>
                     </div>
@@ -440,6 +607,15 @@
             );
         };
 
+        const marketingOptions = [
+            { label: 'Futebol: Clássico Local', value: 'Futebol: Clássico Local' },
+            { label: 'Séries e Filmes Novos (Lançamentos)', value: 'Séries e Filmes Novos (Lançamentos)' },
+            { label: 'Promoção: 3 Meses com Desconto', value: 'Promoção: 3 Meses com Desconto' },
+            { label: 'Pacote Infantil e Desenhos', value: 'Pacote Infantil e Desenhos' },
+            { label: 'Feriado/Fim de Semana Estendido', value: 'Feriado/Fim de Semana Estendido' },
+        ];
+
+
         const FireTVManager = () => {
             const [user, setUser] = useState(null);
             const [view, setView] = useState('landing');
@@ -457,42 +633,73 @@
             const [editingItem, setEditingItem] = useState(null); 
             const [formData, setFormData] = useState({});
             const [notification, setNotification] = useState({ show: false, message: '', type: 'success' });
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setConfirmDialog)
             const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
             const [isProcessing, setIsProcessing] = useState(false);
             const [teamFilter, setTeamFilter] = useState('all');
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setNewMemberRole)
             const [searchTeamTerm, setSearchTeamTerm] = useState('');
             const [newMemberRole, setNewMemberRole] = useState("reseller");
             const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setMessageClient)
             const [messageClient, setMessageClient] = useState(null);
             const [messageEdit, setMessageEdit] = useState('');
             const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setViewingItem)
             const [viewingItem, setViewingItem] = useState(null); 
             const [isPanelExpModalOpen, setIsPanelExpModalOpen] = useState(false);
             const [expDays, setExpDays] = useState(0); 
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setMessageTarget)
             const [messageTarget, setMessageTarget] = useState('client');
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setSelectedClients)
             const [selectedClients, setSelectedClients] = useState([]);
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setIsImportModalOpen)
             const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setSettingsView)
             const [settingsView, setSettingsView] = useState('menu'); 
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setAiView)
             const [aiView, setAiView] = useState('menu');
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setAiInput)
             const [aiInput, setAiInput] = useState('');
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setAiResponse)
             const [aiResponse, setAiResponse] = useState('');
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setAiLoading)
             const [aiLoading, setAiLoading] = useState(false);
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setMarketingPrompt)
             const [marketingPrompt, setMarketingPrompt] = useState('Futebol: Clássico Local');
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setUserApiKey)
             const [userApiKey, setUserApiKey] = useState(defaultApiKey); 
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setCeoApiKey)
             const [ceoApiKey, setCeoApiKey] = useState(defaultApiKey); 
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setMsgCompany)
             const [msgCompany, setMsgCompany] = useState("Fire Gestor");
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setMsgTemplates)
             const [msgTemplates, setMsgTemplates] = useState({});
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setBotSendTime)
             const [botSendTime, setBotSendTime] = useState("09:00"); 
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setNewEmail)
             const [newEmail, setNewEmail] = useState('');
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setNewPassword)
             const [newPassword, setNewPassword] = useState('');
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setCurrentPassword)
             const [currentPassword, setCurrentPassword] = useState('');
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setBotSession)
             const [botSession, setBotSession] = useState({ status: 'disconnected', qrCode: null });
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setClientLog)
             const [clientLog, setClientLog] = useState([]); 
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setIsBanned)
+            const [isBanned, setIsBanned] = useState(false); 
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setRenewedClientData)
+            const [renewedClientData, setRenewedClientData] = useState(null); 
 
             // --- ESTADOS DO FINANCEIRO ---
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setTransactions)
             const [transactions, setTransactions] = useState([]);
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setIsTransactionModalOpen)
             const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setFinancialFilterDate)
             const [financialFilterDate, setFinancialFilterDate] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setTransactionFormData)
             const [transactionFormData, setTransactionFormData] = useState({ description: '', amount: '', type: 'income', date: new Date().toISOString().split('T')[0], category: 'Mensalidade' });
 
             const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
@@ -501,11 +708,16 @@
             const handleSaveTransaction = async (e) => {
                 e.preventDefault(); setIsProcessing(true);
                 try {
+                    // NOVO: Adicionado 'Renovação de Painel'
+                    const categories = ['Mensalidade', 'Venda Direta', 'Custo Painel', 'Marketing', 'Servidor', 'Outros', 'Renovação de Painel']; 
+                    const category = categories.includes(transactionFormData.category) ? transactionFormData.category : 'Outros';
+
                     const payload = {
                         ...transactionFormData,
                         amount: parseFloat(transactionFormData.amount) || 0,
                         userId: user.email, // Vincula ao usuário logado
-                        createdAt: new Date().toISOString()
+                        createdAt: new Date().toISOString(),
+                        category: category // Garante que a categoria é válida
                     };
                     
                     if (editingItem) {
@@ -559,8 +771,18 @@
                     if (u) {
                         if (!u.emailVerified && u.email !== 'admin@firetv.com') { if (view === 'dashboard') { await signOut(auth); localStorage.removeItem('firetv_user_session'); setUser(null); setView('landing'); } } 
                         else if (!localStorage.getItem('firetv_user_session')) {
+                            // VERIFICAÇÃO CRÍTICA DE CONTA DELETADA/BANIDA
                             const q = query(getUsersCollection(), where('email', '==', u.email));
                             const s = await getDocs(q);
+                            
+                            // SE NÃO ENCONTRAR O USUÁRIO NO BANCO DE DADOS (FOI DELETADO)
+                            if (s.empty || s.docs[0].data().status === 'deleted') {
+                                setIsBanned(true); // Ativa o modal de banimento
+                                setInitializing(false); // Para o loading
+                                await signOut(auth); // Desloga do Firebase
+                                return; // Para a execução
+                            }
+
                             if (!s.empty && s.docs[0].data().status !== 'deleted') { const uData = { id: s.docs[0].id, ...s.docs[0].data() }; setUser(uData); setView('dashboard'); localStorage.setItem('firetv_user_session', JSON.stringify(uData)); } else { await signOut(auth); }
                         }
                     }
@@ -655,6 +877,7 @@
                         if (editingItem) { await updateDoc(doc(getClientsCollection(), editingItem.id), payload); showToast('Cliente editado!', 'success'); } 
                         else { await addDoc(getClientsCollection(), { ...payload, createdBy: user.email, createdAt: new Date().toISOString(), status: 'active' }); showToast('Cliente criado!', 'success'); }
                     } else {
+                        // ATUALIZADO: uPayload agora garante que valuePaid é um número
                         const uPayload = { ...formData, whatsapp: formData.whatsapp?.replace(/\D/g, '') || '', valuePaid: parseFloat(formData.valuePaid) || 0, observation: formData.observation || '' };
                         if (user.role === 'ceo') uPayload.role = newMemberRole;
                         if (editingItem) { await updateDoc(doc(getUsersCollection(), editingItem.id), uPayload); showToast('Revenda editada!', 'success'); } 
@@ -668,13 +891,58 @@
                 } catch (e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
             };
 
+            // ATUALIZAÇÃO: Exclusão Profunda e Otimista
             const handleDelete = (id, type) => {
+                const itemToDelete = type === 'user' ? team.find(t => t.id === id) : clients.find(c => c.id === id);
+                
                 setConfirmDialog({
-                    isOpen: true, title: 'Excluir?', message: 'Esta ação é irreversível.',
+                    isOpen: true,
+                    // Título e mensagem mais claros sobre a gravidade da ação
+                    title: type === 'user' ? `Excluir ${itemToDelete?.name}?` : 'Excluir Cliente?',
+                    message: type === 'user' 
+                        ? 'Esta ação é <b>PERMANENTE</b>. Ela apagará o acesso da revenda e <b>TODOS</b> os seus clientes vinculados do sistema.' 
+                        : 'Tem certeza que deseja excluir este cliente permanentemente da raiz do sistema?',
                     onConfirm: async () => {
                         setIsProcessing(true);
-                        try { if (type === 'user') await deleteDoc(doc(getUsersCollection(), id)); else await deleteDoc(doc(getClientsCollection(), id)); showToast('Removido.', 'success'); setConfirmDialog({ isOpen: false }); } 
-                        catch(e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
+                        
+                        // ATUALIZAÇÃO OTIMISTA: Remove da tela IMEDIATAMENTE antes do servidor
+                        if (type === 'user') {
+                            setTeam(prev => prev.filter(u => u.id !== id));
+                        } else {
+                            setClients(prev => prev.filter(c => c.id !== id));
+                        }
+
+                        try {
+                            if (type === 'user') {
+                                // 1. Excluir clientes vinculados (Cleanup)
+                                if (itemToDelete?.email) {
+                                    const qClients = query(getClientsCollection(), where('createdBy', '==', itemToDelete.email));
+                                    const snapshot = await getDocs(qClients);
+                                    
+                                    // Usando batch para deletar clientes em lote
+                                    const batch = writeBatch(db);
+                                    snapshot.docs.forEach(doc => {
+                                        batch.delete(doc.ref);
+                                    });
+                                    if (!snapshot.empty) {
+                                        await batch.commit();
+                                    }
+                                }
+                                // 2. Excluir o documento do Usuário (Revenda)
+                                await deleteDoc(doc(getUsersCollection(), id));
+                            } else {
+                                // Excluir documento do Cliente
+                                await deleteDoc(doc(getClientsCollection(), id));
+                            }
+                            
+                            showToast('Registro excluído permanentemente!', 'success');
+                            setConfirmDialog({ isOpen: false });
+                        } catch(e) {
+                            showToast(`Erro ao excluir: ${e.message}`, 'error');
+                            // Se der erro, idealmente recarregaria os dados, mas o reload do useEffect cuida disso
+                        } finally {
+                            setIsProcessing(false);
+                        }
                     }
                 });
             };
@@ -690,6 +958,30 @@
                             if (type === 'user') {
                                 let e = new Date(); let currentExp = new Date(item.panelExpiration); if (!isNaN(currentExp.getTime()) && currentExp > e) e = currentExp; e.setDate(e.getDate() + 30);
                                 await updateDoc(doc(getUsersCollection(), item.id), { panelExpiration: e.toISOString(), plan: 'renewed' });
+                                
+                                // NOVO: Lançar no Financeiro (Receita de Painel)
+                                const panelValue = parseFloat(item.valuePaid) || 0;
+                                if (panelValue > 0) {
+                                    await addDoc(getTransactionsCollection(), {
+                                        description: `Renovação Painel: ${item.name}`,
+                                        amount: panelValue,
+                                        type: 'income',
+                                        category: 'Renovação de Painel', // Categoria específica para Revenda
+                                        date: new Date().toISOString().split('T')[0],
+                                        userId: user.email,
+                                        createdAt: new Date().toISOString()
+                                    });
+                                }
+
+                                // NOVO: Define os dados para exibir o modal de sucesso/comprovante do painel
+                                setRenewedClientData({ ...item, panelExpiration: e.toISOString(), isClient: false });
+                                
+                                // NOVO: Enviar mensagem de sucesso de renovação para o revenda
+                                if (item.whatsapp && botSession?.status === 'connected') {
+                                    const message = generateWhatsAppMessage({...item, panelExpiration: e.toISOString()}, user, 'team', 'panel_renew_success'); 
+                                    await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), { to: `55${item.whatsapp.replace(/\D/g,'')}`, body: message, status: 'pending', createdAt: serverTimestamp() });
+                                }
+
                             } else {
                                 // 1. Atualizar data do cliente
                                 let b = new Date(); let currentDue = new Date(item.dueDate); if (!isNaN(currentDue.getTime()) && currentDue > b) b = currentDue; b.setDate(b.getDate() + 30); const newDueDate = b.toISOString().split('T')[0];
@@ -702,7 +994,7 @@
                                         description: `Renovação: ${item.name}`,
                                         amount: transactionValue,
                                         type: 'income',
-                                        category: 'Renovação',
+                                        category: 'Mensalidade',
                                         date: new Date().toISOString().split('T')[0], // Data de hoje
                                         userId: user.email,
                                         createdAt: new Date().toISOString()
@@ -714,8 +1006,12 @@
                                     const message = generateWhatsAppMessage({...item, dueDate: newDueDate}, user, 'client', 'renew'); 
                                     await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), { to: `55${item.whatsapp.replace(/\D/g,'')}`, body: message, status: 'pending', createdAt: serverTimestamp() });
                                 }
+                                
+                                // NOVO: Define os dados para exibir o modal de sucesso/comprovante
+                                setRenewedClientData({ ...item, dueDate: newDueDate, isClient: true });
+                                
                             }
-                            showToast('Renovado e registrado no financeiro!', 'success');
+                            
                         } catch(e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
                     }
                 });
@@ -734,10 +1030,38 @@
             const handleSaveMessageConfig = async (e) => {
                 e.preventDefault(); setIsProcessing(true);
                 try {
-                    const updatedFields = { companyName: msgCompany, messageTemplates: { client: msgTemplates.client || {}, team: msgTemplates.team || {} }, botSendTime: botSendTime };
+                    // CORREÇÃO CRÍTICA: Use o operador OR (||) com string vazia ('') para garantir
+                    // que, se o campo for undefined/null no estado, ele seja salvo como '' (válido no Firestore)
+                    const finalTemplates = { 
+                        client: {
+                            expired: msgTemplates.client?.expired || '',
+                            today: msgTemplates.client?.today || '',
+                            expiring: msgTemplates.client?.expiring || '',
+                            renew: msgTemplates.client?.renew || '', // CORREÇÃO APLICADA AQUI
+                        },
+                        team: {
+                            team_contact: msgTemplates.team?.team_contact || '',
+                            panel_expiring: msgTemplates.team?.panel_expiring || '',
+                            panel_expired: msgTemplates.team?.panel_expired || '',
+                            panel_renew_success: msgTemplates.team?.panel_renew_success || '',
+                        }
+                    };
+
+                    const updatedFields = { companyName: msgCompany, messageTemplates: finalTemplates, botSendTime: botSendTime };
                     if (user.role === 'ceo') { updatedFields.aiApiKey = ceoApiKey; setUserApiKey(ceoApiKey); }
-                    await updateDoc(doc(getUsersCollection(), user.id), updatedFields); setUser(prev => ({...prev, ...updatedFields})); showToast("Salvo!", 'success');
-                } catch (e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
+                    await updateDoc(doc(getUsersCollection(), user.id), updatedFields); 
+                    
+                    // ATUALIZA O ESTADO LOCAL DO USUÁRIO APÓS SALVAR
+                    setUser(prev => ({...prev, ...updatedFields})); 
+                    
+                    showToast("Salvo!", 'success');
+                } catch (e) { 
+                    // Melhor log de erro para debug
+                    console.error("Erro ao salvar configuração de mensagem:", e);
+                    showToast(`Erro ao salvar: ${e.message}. Verifique o console.`, 'error'); 
+                } finally { 
+                    setIsProcessing(false); 
+                }
             };
 
             const handleAiAction = async (type) => {
@@ -795,6 +1119,32 @@
             const isTeamViewer = user?.role === 'ceo' || user?.role === 'master';
             const isMessageTeamConfigurable = user?.role === 'ceo' || user?.role === 'master';
             const statusColorMap = { active: 'border-green-500', expiring: 'border-yellow-500', today: 'border-orange-500', expired: 'border-red-500', no_date: 'border-slate-500' };
+
+            // TELA DE BANIMENTO
+            if (isBanned) {
+                return (
+                    <div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-center animate-fade-in relative z-50">
+                        <div className="bg-red-950/30 p-8 rounded-2xl border border-red-500/50 max-w-md w-full shadow-2xl relative overflow-hidden">
+                            <div className="absolute inset-0 bg-red-500/5 z-0 animate-pulse-slow"></div>
+                            <div className="relative z-10">
+                                <div className="w-24 h-24 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/30">
+                                    <Ban size={48} className="text-red-500" />
+                                </div>
+                                <h2 className="text-3xl font-black text-white mb-2">CONTA BANIDA</h2>
+                                <p className="text-red-200 mb-6 text-sm leading-relaxed">
+                                    Esta conta foi desativada ou removida do sistema.
+                                </p>
+                                <div className="bg-black/40 rounded-xl p-4 mb-6 border border-red-900/50">
+                                    <p className="text-xs text-slate-400 mb-1 uppercase font-bold">Contato do Suporte (CEO)</p>
+                                    <p className="text-lg text-white font-mono font-bold">22 99274-3070</p>
+                                </div>
+                                <p className="text-xs text-slate-500 mb-6">Entre em contato se acha que essa ação foi errada.</p>
+                                <button onClick={() => { setIsBanned(false); window.location.reload(); }} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl border border-slate-700 hover:border-slate-500 transition-all">Voltar ao Início</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
 
             if (initializing) return <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-orange-500 gap-4"><LoadingSpinner size={40} /><p className="font-bold animate-pulse">Carregando Sistema...</p></div>;
             if (user && isPanelExpired(user.panelExpiration) && user.role !== 'ceo') return (<div className="h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-center"><div className="bg-slate-900 p-8 rounded-2xl border border-red-500/50"><h2 className="text-3xl font-bold text-white mb-2">ACESSO BLOQUEADO</h2><button onClick={handleLogout} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl mt-4">Sair da Conta</button></div></div>);
@@ -864,15 +1214,36 @@
             const Notification = () => { if (!notification.show) return null; setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 3000); return <div className={`fixed bottom-24 md:bottom-5 right-5 ${notification.type==='error'?'bg-red-600':'bg-emerald-600'} text-white px-5 py-3 rounded-xl shadow-2xl z-[999] animate-slide-in`}>{notification.message}</div>; };
             const PanelExpModal = () => { if (!isPanelExpModalOpen) return null; return (<div className="fixed inset-0 bg-black/80 z-[85] flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-2xl p-6 relative"><button onClick={() => setIsPanelExpModalOpen(false)} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400"><XCircle size={20}/></button><h3 className="font-bold text-white text-xl mb-4">Ajustar Expiração</h3><form onSubmit={handleExpDaysChange} className="space-y-4"><div><label className="text-xs font-bold text-slate-500 ml-1">DIAS (+/-)</label><input type="number" required value={expDays} onChange={e => setExpDays(parseInt(e.target.value) || 0)} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white text-xl text-center"/></div><button type="submit" disabled={isProcessing} className="w-full bg-blue-600 hover:bg-blue-500 py-3.5 rounded-xl font-bold text-white">{isProcessing ? <LoadingSpinner /> : 'Confirmar'}</button></form></div></div>); };
 
-            if (view === 'landing') return (<div className="min-h-screen bg-slate-950 relative overflow-hidden"><div className="absolute inset-0 bg-grid-slate-800/10"></div><div className="relative z-10 pt-20 pb-20 text-center max-w-7xl mx-auto px-4"><h1 className="text-4xl md:text-6xl font-black text-white mb-4">Gerencie seu IPTV<br/> com <span className="text-orange-500">Inteligência</span></h1><div className="flex justify-center gap-4 mt-8"><button onClick={() => { setAuthType('register'); setShowAuthModal(true); }} className="bg-orange-600 text-white font-bold text-lg px-8 py-4 rounded-xl">TESTE GRÁTIS</button><button onClick={() => { setAuthType('login'); setShowAuthModal(true); }} className="text-slate-300 font-bold text-lg px-8 py-4 rounded-xl hover:bg-slate-800">Entrar</button></div></div><FeaturesSection /><FAQSection />{showAuthModal && <AuthModal />}{showRegistrationSuccess && <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50"><div className="bg-slate-900 p-8 rounded-2xl text-center"><CheckCircle size={48} className="text-green-500 mx-auto mb-4"/><h2 className="text-2xl font-bold text-white">Verifique seu E-mail</h2><p className="text-slate-400 mt-2">Enviamos um link de confirmação.</p><button onClick={() => setShowRegistrationSuccess(false)} className="mt-6 w-full bg-orange-600 text-white font-bold py-3 rounded-xl">OK</button></div></div>}</div>);
+            if (view === 'landing') return (<div className="min-h-screen bg-slate-950 relative overflow-hidden"><div className="absolute inset-0 bg-grid-slate-800/10"></div><div className="relative z-10 pt-20 pb-20 text-center max-w-7xl mx-auto px-4"><h1 className="text-4xl md:text-6xl font-black text-white mb-4">Gerencie seu IPTV<br/> com <span className="text-orange-500">Inteligência</span></h1><div className="flex justify-center gap-4 mt-8"><button onClick={() => { setAuthType('register'); setShowAuthModal(true); }} className="bg-orange-600 text-white font-bold text-lg px-8 py-4 rounded-xl">TESTE GRÁTIS</button><button onClick={() => { setAuthType('login'); setShowAuthModal(true); }} className="text-slate-300 font-bold text-lg px-8 py-4 rounded-xl hover:bg-slate-800">Entrar</button></div></div><FeaturesSection /><FAQSection />{showAuthModal && <AuthModal />}
+            {/* NOVO MODAL DE SUCESSO COM INSTRUÇÕES DETALHADAS */}
+            {showRegistrationSuccess && <RegistrationSuccessModal setShowRegistrationSuccess={setShowRegistrationSuccess} />}
+            </div>);
 
             return (
                 <div className="flex h-screen bg-slate-900">
-                    {showAuthModal && <AuthModal />} {showRegistrationSuccess && <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50"><div className="bg-slate-900 p-8 rounded-xl"><h2 className="text-white font-bold">Verifique seu e-mail!</h2><button onClick={()=>setShowRegistrationSuccess(false)} className="mt-4 bg-orange-600 text-white px-4 py-2 rounded">OK</button></div></div>} <ConfirmDialog /> <Notification />
+                    {showAuthModal && <AuthModal />} {showRegistrationSuccess && <RegistrationSuccessModal setShowRegistrationSuccess={setShowRegistrationSuccess} />} <ConfirmDialog /> <Notification />
                     <ImportExportModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} clients={clients} user={user} showToast={showToast} isProcessing={isProcessing} />
                     {isMessageModalOpen && <MessageModal messageClient={messageClient} messageEdit={messageEdit} setMessageEdit={setMessageEdit} isProcessing={isProcessing} setIsMessageModalOpen={setIsMessageModalOpen} showToast={showToast} sendBotMessageFromModal={sendBotMessageFromModal} />} 
                     {isViewModalOpen && <ViewModal isViewModalOpen={isViewModalOpen} setIsViewModalOpen={setIsViewModalOpen} viewingItem={viewingItem} InfoField={InfoField} UserPlus={UserPlus} Smartphone={Smartphone} Calendar={Calendar} DollarSign={DollarSign} Wifi={Wifi} FileText={FileText} Info={Info} XCircle={XCircle} formatCurrency={formatCurrency} formatDate={formatDate} />} 
                     {isPanelExpModalOpen && <PanelExpModal />}
+                    {/* MODAIS DE SUCESSO DE RENOVAÇÃO (CLIENTE OU PAINEL) */}
+                    {renewedClientData && renewedClientData.isClient && (
+                        <RenewalSuccessModal 
+                            item={renewedClientData} 
+                            onClose={() => setRenewedClientData(null)} 
+                            formatCurrency={formatCurrency} 
+                            formatDate={formatDate}
+                            formatDateTime={formatDateTime}
+                        />
+                    )}
+                    {renewedClientData && !renewedClientData.isClient && (
+                        <PanelRenewalSuccessModal 
+                            item={renewedClientData} 
+                            onClose={() => setRenewedClientData(null)} 
+                            formatDateTime={formatDateTime}
+                        />
+                    )}
+
 
                     <aside className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800">
                          <div className="flex items-center gap-2 p-4 border-b border-slate-800"><div className="bg-orange-600 p-1.5 rounded-lg"><UserPlus size={20} /></div><span className="text-xl font-black">FIRE <span className="text-orange-500">GESTOR</span></span></div>
@@ -959,11 +1330,11 @@
                                     <div className="bg-slate-900 rounded-2xl border border-slate-800 flex flex-col">
                                         <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                                             <h3 className="font-bold text-white flex items-center gap-2"><FileText size={18}/> Extrato</h3>
-                                            <input type="month" value={financialFilterDate} onChange={(e) => setFinancialFilterDate(e.target.value)} className="bg-slate-950 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-sm outline-none font-bold" />
+                                            <input type="month" value={financialFilterDate} onChange={(e) => setFinancialFilterDate(e.target.value)} className="w-full bg-slate-950 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-sm outline-none font-bold md:w-auto" />
                                         </div>
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-left text-sm text-slate-400">
-                                                <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold"><tr><th className="px-6 py-4">Data</th><th className="px-6 py-4">Descrição</th><th className="px-6 py-4">Categoria</th><th className="px-6 py-4">Valor</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
+                                                <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10"><tr><th className="px-6 py-4">Data</th><th className="px-6 py-4">Descrição</th><th className="px-6 py-4">Categoria</th><th className="px-6 py-4">Valor</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
                                                 <tbody className="divide-y divide-slate-800">
                                                     {financialSummary.history.length === 0 ? (
                                                         <tr><td colSpan="5" className="px-6 py-8 text-center text-slate-600 italic">Nenhuma transação neste mês.</td></tr>
@@ -971,7 +1342,12 @@
                                                         <tr key={t.id} className="hover:bg-slate-800/30">
                                                             <td className="px-6 py-4">{formatDate(t.date)}</td>
                                                             <td className="px-6 py-4 font-bold text-white">{t.description}</td>
-                                                            <td className="px-6 py-4"><span className="bg-slate-800 px-2 py-1 rounded text-xs">{t.category}</span></td>
+                                                            <td className="px-6 py-4">
+                                                                {/* NOVO: Destaque visual para categoria Renovação de Painel */}
+                                                                <span className={`px-2 py-1 rounded text-xs font-bold ${t.category === 'Renovação de Painel' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-800'}`}>
+                                                                    {t.category}
+                                                                </span>
+                                                            </td>
                                                             <td className={`px-6 py-4 font-bold ${t.type === 'income' ? 'text-green-400' : 'text-red-400'}`}>{t.type === 'income' ? '+' : '-'} {formatCurrency(t.amount)}</td>
                                                             <td className="px-6 py-4 text-right flex justify-end gap-2">
                                                                 <ActionButton onClick={()=>{setEditingItem(t); setTransactionFormData(t); setIsTransactionModalOpen(true);}} color="slate" icon={Edit} />
@@ -1002,9 +1378,23 @@
                                                 <div><label className="text-xs font-bold text-slate-500 ml-1">VALOR</label><input type="number" step="0.01" required value={transactionFormData.amount} onChange={e=>setTransactionFormData({...transactionFormData, amount: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
                                                 <div><label className="text-xs font-bold text-slate-500 ml-1">DATA</label><input type="date" required value={transactionFormData.date} onChange={e=>setTransactionFormData({...transactionFormData, date: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
                                             </div>
-                                            <div><label className="text-xs font-bold text-slate-500 ml-1">CATEGORIA</label><select value={transactionFormData.category} onChange={e=>setTransactionFormData({...transactionFormData, category: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none">
-                                                <option>Mensalidade</option><option>Venda Direta</option><option>Custo Painel</option><option>Marketing</option><option>Servidor</option><option>Outros</option>
-                                            </select></div>
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 ml-1">CATEGORIA</label>
+                                                <select 
+                                                    value={transactionFormData.category} 
+                                                    onChange={e=>setTransactionFormData({...transactionFormData, category: e.target.value})} 
+                                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"
+                                                >
+                                                    <option>Mensalidade</option>
+                                                    <option>Venda Direta</option>
+                                                    <option>Custo Painel</option>
+                                                    <option>Marketing</option>
+                                                    <option>Servidor</option>
+                                                    <option>Outros</option>
+                                                    {/* NOVO: Opção para receita de revenda */}
+                                                    <option>Renovação de Painel</option>
+                                                </select>
+                                            </div>
                                             <button type="submit" disabled={isProcessing} className="w-full bg-green-600 hover:bg-green-500 py-3.5 rounded-xl font-bold text-white">{isProcessing ? <LoadingSpinner /> : 'Salvar Lançamento'}</button>
                                         </form>
                                     </div>
@@ -1026,12 +1416,24 @@
                                             <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10"><tr><th className="px-6 py-4">Nome</th><th className="px-6 py-4">Vencimento</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
                                             <tbody className="divide-y divide-slate-800">{filteredClients.map(client => {
                                                 const statusData = getClientStatus(client.dueDate);
-                                                const colorClass = statusColorMap[statusData.status] || statusColorMap.no_date; 
+                                                const colorClass = statusColorMap[statusData.status] || statusColorMap.no_date;
+                                                const valueDisplay = formatCurrency(client.value);
+                                                
+                                                // MODIFICAÇÃO: Conteúdo do Status com Valor em todas as categorias
+                                                const statusContentWithPrice = (
+                                                    <span className={`text-${statusData.color}-400 bg-${statusData.color}-500/10 px-2 py-1 rounded text-xs flex items-center justify-center whitespace-nowrap`}>
+                                                        {statusData.label}
+                                                        <span className="font-bold ml-2"> | {valueDisplay}</span>
+                                                    </span>
+                                                );
+                                                
                                                 return (
                                                     <tr key={client.id} className="hover:bg-slate-800/30">
                                                         <td className={`px-6 py-4 font-bold text-white whitespace-nowrap border-l-4 ${colorClass}`}>{client.name}</td>
                                                         <td className="px-6 py-4 whitespace-nowrap">{formatDate(client.dueDate)}</td>
-                                                        <td className="px-6 py-4 whitespace-nowrap"><span className={`text-${statusData.color}-400 bg-${statusData.color}-500/10 px-2 py-1 rounded text-xs`}>{statusData.label}</span></td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            {statusContentWithPrice}
+                                                        </td>
                                                         <td className="px-6 py-4 text-right flex justify-end gap-2 whitespace-nowrap">
                                                             <ActionButton onClick={() => {setViewingItem(client); setIsViewModalOpen(true);}} color="orange" icon={Eye} />
                                                             {client.whatsapp && botSession?.status === 'connected' && <ActionButton onClick={() => handleOpenMessageModal(client, 'client')} color="purple" icon={Send} />}
@@ -1055,7 +1457,33 @@
                                         <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col h-[calc(100vh-200px)]">
                                             <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row gap-4 bg-slate-900 z-10"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} /><input type="text" value={searchTeamTerm} onChange={(e) => setSearchTeamTerm(e.target.value)} placeholder="Buscar..." className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-10 text-white outline-none text-sm" /></div><div className="flex gap-2 overflow-x-auto"><button onClick={()=>setTeamFilter('all')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='all'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Todos</button><button onClick={()=>setTeamFilter('master')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='master'?'bg-purple-500':'bg-slate-800 text-slate-400'}`}>Master</button><button onClick={()=>setTeamFilter('reseller')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${teamFilter==='reseller'?'bg-blue-500':'bg-slate-800 text-slate-400'}`}>Revenda</button></div></div>
                                             <div className="overflow-auto flex-1">
-                                                <table className="w-full text-left text-sm text-slate-400"><thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10"><tr><th className="px-6 py-4">Nome</th><th className="px-6 py-4">Cargo</th><th className="px-6 py-4">Painel</th><th className="px-6 py-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-800">{team.filter(t => {const matchS=t.name?.toLowerCase().includes(searchTeamTerm.toLowerCase()); const matchR=teamFilter==='all'?true:t.role===teamFilter; return matchS&&matchR;}).map(member => (<tr key={member.id} className="hover:bg-slate-800/30"><td className="px-6 py-4 font-bold text-white">{member.name}</td><td className="px-6 py-4"><RoleBadge role={member.role} /></td><td className="px-6 py-4">{isPanelExpired(member.panelExpiration) ? 'Expirado' : `${getDaysLeft(member.panelExpiration)}d`}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><ActionButton onClick={() => {setViewingItem(member); setIsViewModalOpen(true);}} color="orange" icon={Eye} />{(user.role === 'ceo' || user.role === 'master') && <ActionButton onClick={()=>{setEditingItem(member); setModalType('user'); setIsPanelExpModalOpen(true);}} color="yellow" icon={Clock} title="Ajustar Dias" />}<ActionButton onClick={()=>handleRenew(member, 'user')} color="blue" icon={RefreshCw} /><ActionButton onClick={()=>{setEditingItem(member); setFormData(member); setNewMemberRole(member.role); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} /><ActionButton onClick={()=>handleDelete(member.id, 'user')} color="red" icon={Trash2} /></td></tr>))}</tbody></table>
+                                                <table className="w-full text-left text-sm text-slate-400"><thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10"><tr><th className="px-6 py-4">Nome</th><th className="px-6 py-4">Cargo</th><th className="px-6 py-4">Painel</th><th className="px-6 py-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-800">{team.filter(t => {const matchS=t.name?.toLowerCase().includes(searchTeamTerm.toLowerCase()); const matchR=teamFilter==='all'?true:t.role===teamFilter; return matchS&&matchR;}).map(member => {
+                                                    const statusData = getPanelExpirationStatus(member.panelExpiration);
+                                                    const valuePaid = parseFloat(member.valuePaid) || 0;
+                                                    const panelValueDisplay = formatCurrency(valuePaid);
+                                                    
+                                                    // MODIFICAÇÃO: Conteúdo do Painel com Status, Valor e Plano
+                                                    const panelContentWithPrice = (
+                                                        <span className={`text-${statusData.color}-400 bg-${statusData.color}-500/10 px-2 py-1 rounded text-xs flex items-center justify-center whitespace-nowrap`}>
+                                                            {/* Status (Vencido, Vence HOJE, Ativo, etc.) */}
+                                                            {statusData.label}
+                                                            {/* Valor do Painel (Visível se valuePaid > 0) */}
+                                                            {valuePaid > 0 && (
+                                                                <span className="font-bold ml-2"> | {panelValueDisplay}</span>
+                                                            )}
+                                                            {/* Plano (Trial/Renewed) */}
+                                                            <span className="ml-2 font-light italic opacity-70">({member.plan || 'Trial'})</span>
+                                                        </span>
+                                                    );
+                                                    
+                                                    return (
+                                                    <tr key={member.id} className="hover:bg-slate-800/30">
+                                                        <td className="px-6 py-4 font-bold text-white">{member.name}</td>
+                                                        <td className="px-6 py-4"><RoleBadge role={member.role} /></td>
+                                                        <td className="px-6 py-4">{panelContentWithPrice}</td>
+                                                        <td className="px-6 py-4 text-right flex justify-end gap-2"><ActionButton onClick={() => {setViewingItem(member); setIsViewModalOpen(true);}} color="orange" icon={Eye} />{(user.role === 'ceo' || user.role === 'master') && <ActionButton onClick={()=>{setEditingItem(member); setModalType('user'); setIsPanelExpModalOpen(true);}} color="yellow" icon={Clock} title="Ajustar Dias" />}<ActionButton onClick={()=>handleRenew(member, 'user')} color="blue" icon={RefreshCw} /><ActionButton onClick={()=>{setEditingItem(member); setFormData(member); setNewMemberRole(member.role); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} /><ActionButton onClick={()=>handleDelete(member.id, 'user')} color="red" icon={Trash2} /></td></tr>
+                                                    );
+                                                })}</tbody></table>
                                             </div>
                                         </div>
                                     )}
@@ -1076,7 +1504,7 @@
                                             <p className="text-xs text-slate-500 mb-3">Esta chave será utilizada por todos os usuários Revenda e Master no sistema.</p>
                                             <form onSubmit={handleSaveMessageConfig} className="flex gap-2">
                                                 <input type="text" value={ceoApiKey} onChange={(e) => setCeoApiKey(e.target.value)} placeholder="Cole sua Gemini API Key aqui..." className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-white outline-none"/>
-                                                <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl font-bold">Salvar</button>
+                                                <button type="submit" disabled={isProcessing} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-xl font-bold">Salvar</button>
                                             </form>
                                         </div>
                                     )}
@@ -1298,12 +1726,25 @@
                                                         </div>
                                                     ) : (
                                                         <div className="space-y-4">
-                                                            <p className='text-xs text-slate-500'>Variáveis disponíveis: `{'{nome_revenda}'}`, `{'{master}'}`, `{'{email_revenda}'}`, `{'{whatsapp_revenda}'}`, `{'{valor_pago}'}`.</p>
+                                                            <p className='text-xs text-slate-500'>Variáveis disponíveis: `{'{nome_revenda}'}`, `{'{master}'}`, `{'{email_revenda}'}`, `{'{whatsapp_revenda}'}`, `{'{valor_pago}'}`, `{'{vencimento_painel}'}`, `{'{dias_restantes}'}`, `{'{plano_revenda}'}`.</p>
                                                             <div>
                                                                 <label className="text-xs font-bold text-slate-300">Contato Geral</label>
                                                                 <textarea rows="4" 
                                                                     value={msgTemplates?.team?.['team_contact'] || `Olá *{nome_revenda}*, sou o Master *{master}*.\n\nPrecisamos conversar sobre o painel. Favor responder assim que possível.`} 
                                                                     onChange={(e) => setMsgTemplates(prev => ({...prev, team: {...(prev.team || {}), ['team_contact']: e.target.value}}))} 
+                                                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none"
+                                                                />
+                                                                {/* NOVOS CAMPOS PARA NOTIFICAÇÃO DE PAINEL */}
+                                                                <label className="text-xs font-bold text-slate-300 mt-4 block">Aviso de Painel Próximo (3 dias)</label>
+                                                                <textarea rows="4" 
+                                                                    value={msgTemplates?.team?.['panel_expiring'] || `⚠️ *ATENÇÃO, {nome_revenda}!* Seu painel Revenda ({plano_revenda}) vence em *{dias_restantes} dias* ({vencimento_painel}).\n\nPor favor, entre em contato com seu Master ({master}) para renovação e evite o bloqueio.`} 
+                                                                    onChange={(e) => setMsgTemplates(prev => ({...prev, team: {...(prev.team || {}), ['panel_expiring']: e.target.value}}))} 
+                                                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none"
+                                                                />
+                                                                <label className="text-xs font-bold text-slate-300 mt-4 block">Confirmação de Renovação (Pós-Ação)</label>
+                                                                <textarea rows="4" 
+                                                                    value={msgTemplates?.team?.['panel_renew_success'] || `✅ *RENOVÇÃO DE PAINEL CONCLUÍDA!* O painel de {nome_revenda} ({plano_revenda}) foi renovado e agora está ativo até *{vencimento_painel}*.\n\nObrigado pela confiança!`} 
+                                                                    onChange={(e) => setMsgTemplates(prev => ({...prev, team: {...(prev.team || {}), ['panel_renew_success']: e.target.value}}))} 
                                                                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-white outline-none"
                                                                 />
                                                             </div>
@@ -1340,7 +1781,13 @@
                                             {modalType === 'client' ? (
                                                 <><div><label className="text-xs font-bold text-slate-500 ml-1">WHATSAPP</label><input value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div><div className="grid grid-cols-2 gap-4"><div><label className="text-xs font-bold text-slate-500 ml-1">VENCIMENTO</label><input type="date" required value={formData.dueDate||''} onChange={e=>setFormData({...formData,dueDate:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div><div><label className="text-xs font-bold text-emerald-500 ml-1">VALOR</label><input type="number" step="0.01" value={formData.value||''} onChange={e=>setFormData({...formData,value:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div></div><div><label className="text-xs font-bold text-slate-500 ml-1">OBS</label><textarea rows="2" value={formData.observation||''} onChange={e=>setFormData({...formData,observation:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div></>
                                             ) : (
-                                                <><div><label className="text-xs font-bold text-slate-500 ml-1">EMAIL</label><input required type="email" value={formData.email||''} disabled={!!editingItem} onChange={e=>setFormData({...formData,email:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none disabled:opacity-50"/></div><div><label className="text-xs font-bold text-slate-500 ml-1">WHATSAPP</label><input value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>{user.role === 'ceo' && (<div className="flex gap-2"><button type="button" onClick={() => setNewMemberRole('master')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'master' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Master</button><button type="button" onClick={() => setNewMemberRole('reseller')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'reseller' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Revenda</button></div>)}</>
+                                                <>
+                                                    <div><label className="text-xs font-bold text-slate-500 ml-1">EMAIL</label><input required type="email" value={formData.email||''} disabled={!!editingItem} onChange={e=>setFormData({...formData,email:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none disabled:opacity-50"/></div>
+                                                    <div><label className="text-xs font-bold text-slate-500 ml-1">WHATSAPP</label><input value={formData.whatsapp||''} onChange={e=>setFormData({...formData,whatsapp:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
+                                                    {/* NOVO CAMPO: Valor do Painel para Contabilização */}
+                                                    <div><label className="text-xs font-bold text-purple-500 ml-1">VALOR DO PAINEL (Para Financeiro)</label><input type="number" step="0.01" value={formData.valuePaid || ''} onChange={e=>setFormData({...formData,valuePaid:e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"/></div>
+                                                    {user.role === 'ceo' && (<div className="flex gap-2"><button type="button" onClick={() => setNewMemberRole('master')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'master' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Master</button><button type="button" onClick={() => setNewMemberRole('reseller')} className={`flex-1 py-2 rounded-lg text-xs font-bold border ${newMemberRole === 'reseller' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-950 border-slate-700 text-slate-400'}`}>Revenda</button></div>)}
+                                                </>
                                             )}
                                             <button type="submit" disabled={isProcessing} className="w-full bg-orange-600 hover:bg-orange-500 py-3.5 rounded-xl font-bold text-white">{isProcessing ? <LoadingSpinner /> : 'Salvar'}</button>
                                         </form>
@@ -1350,10 +1797,25 @@
                         </div>
 
                         <div className="md:hidden fixed bottom-0 w-full bg-slate-900 border-t border-slate-800 flex justify-around items-center z-40 pb-safe shadow-[0_-5px_20px_rgba(0,0,0,0.5)]">
-                            {[ {id:'dashboard', icon:LayoutDashboard, l:'Início'}, {id:'clients', icon:UserPlus, l:'Clientes'}, {id:'financial', icon:DollarSign, l:'Financeiro', c: 'text-green-500'}, {id:'team', icon:Shield, l:'Equipe'}, {id:'ai', icon:Sparkles, l:'IA', c:'text-purple-500'} ].map(btn => (
+                            {[ 
+                                {id:'dashboard', icon:LayoutDashboard, l:'Início'}, 
+                                {id:'clients', icon:UserPlus, l:'Clientes'}, 
+                                {id:'financial', icon:DollarSign, l:'Financeiro', c: 'text-green-500'}, 
+                                {id:'team', icon:Shield, l:'Equipe'}, 
+                                {id:'settings', icon:Settings, l:'Config', c:'text-indigo-500'} 
+                            ].map(btn => (
                                 <button key={btn.id} onClick={() => {setActiveTab(btn.id); if(btn.id==='settings') setSettingsView('menu'); if(btn.id==='ai') setAiView('menu');}} className={`flex flex-col items-center justify-center w-full py-3 transition-colors ${activeTab === btn.id ? (btn.c || 'text-orange-500') : 'text-slate-500'}`}><btn.icon size={22} /><span className="text-[10px] font-bold mt-1">{btn.l}</span></button>
                             ))}
                         </div>
+                        
+                        {/* Botão Flutuante de Ação (FAB) para IA */}
+                        <button 
+                            onClick={() => {setActiveTab('ai'); setAiView('menu');}} 
+                            className="md:hidden fixed bottom-28 right-5 bg-purple-600 hover:bg-purple-500 p-4 rounded-full text-white shadow-xl shadow-purple-900/50 transition-all z-50 animate-pulse-slow"
+                        >
+                            <Sparkles size={24} />
+                        </button>
+
                     </main>
                 </div>
             );
