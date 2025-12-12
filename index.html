@@ -231,6 +231,7 @@
                 today: templates.client?.today || defaultGreeting + `⚠️ *ATENÇÃO:* Seu plano de {valor} vence *HOJE*.\nGaranta a renovação para não perder a programação.`,
                 expiring: templates.client?.expiring || defaultGreeting + `⏳ Seu plano ({valor}) vence em apenas *{dias} dias* ({vencimento}).\nQue tal já deixar renovado?`,
                 active: templates.client?.active || defaultGreeting + `✅ Seu plano de {valor} está ativo até *{vencimento}*.\nAgradecemos a preferência!`,
+                // CORREÇÃO: Template padrão de renovação para uso manual no Painel Web
                 renew: templates.client?.renew || defaultGreeting + `🥳 *RENOVAÇÃO APLICADA!* Seu plano de {valor} foi renovado com sucesso e agora está ativo até *{vencimento}*.\nObrigado pela preferência!`,
                 no_date: defaultGreeting + `Seu plano ({valor}) está com data de vencimento pendente. Por favor, verifique.`,
                 no_status: defaultGreeting + `Seu plano ({valor}) está ativo.`
@@ -461,6 +462,83 @@
                 </div>
             );
         });
+        
+        // NOVO COMPONENTE: MODAL DE EDIÇÃO DE MENSAGEM ANTES DA RENOVAÇÃO
+        const RenewalMessageModal = ({ isOpen, onClose, client, user, isProcessing, showToast, renewClientConfirmed }) => {
+            if (!isOpen || !client) return null;
+            
+            // Lógica para calcular a nova data de vencimento
+            const initialDueDate = client.dueDate || new Date().toISOString().split('T')[0];
+            const currentDue = new Date(initialDueDate);
+            const initialNewDate = new Date(currentDue);
+            initialNewDate.setDate(initialNewDate.getDate() + 30);
+            
+            const [messageEdit, setMessageEdit] = useState('');
+            const [newDueDate, setNewDueDate] = useState(initialNewDate.toISOString().split('T')[0]);
+            
+            useEffect(() => {
+                // Gera a mensagem inicial quando o modal abre
+                const initialMessage = generateWhatsAppMessage({...client, dueDate: newDueDate}, user, 'client', 'renew');
+                setMessageEdit(initialMessage);
+            }, [client, user, newDueDate]); // Recalcula se a data mudar
+            
+            const handleConfirm = async (e) => {
+                e.preventDefault();
+                if (!messageEdit.trim()) return showToast("Mensagem de renovação vazia.", 'error');
+                if (!newDueDate.trim()) return showToast("Nova data de vencimento inválida.", 'error');
+                
+                const messageData = { body: messageEdit, newDueDate };
+                
+                // Dispara a função principal de renovação com os dados editados
+                renewClientConfirmed(client, messageData);
+                onClose();
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-slate-900 border border-blue-800 w-full max-w-lg rounded-2xl p-6 relative">
+                        <button onClick={onClose} className="absolute top-4 right-4 bg-slate-800 p-1 rounded-full text-slate-400 hover:text-white"><XCircle size={20}/></button>
+                        <h3 className="font-bold text-white text-xl mb-2 flex items-center gap-2"><RefreshCw size={20} className="text-blue-400"/> Pré-visualizar e Renovar</h3>
+                        <p className="text-sm text-slate-400 mb-6">Cliente: {client.name} | Valor: {formatCurrency(client.value)}</p>
+                        
+                        <form onSubmit={handleConfirm} className="space-y-4">
+                            {/* 1. EDIÇÃO DA NOVA DATA */}
+                            <div>
+                                <label className="block text-xs font-bold uppercase text-slate-500 mb-1 flex items-center gap-1"><Calendar size={12}/> Nova Data de Vencimento</label>
+                                <input 
+                                    type="date" 
+                                    required 
+                                    value={newDueDate} 
+                                    onChange={e => setNewDueDate(e.target.value)} 
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white outline-none"
+                                />
+                                <p className="text-xs text-blue-400 mt-1">A data atual é **{formatDate(client.dueDate)}**.</p>
+                            </div>
+
+                            {/* 2. EDIÇÃO DA MENSAGEM */}
+                            <div>
+                                <label className="block text-xs font-bold uppercase text-slate-500 mb-1 flex items-center gap-1"><Send size={12}/> Mensagem de Confirmação (Editável)</label>
+                                <textarea 
+                                    rows="6" 
+                                    value={messageEdit} 
+                                    onChange={e => setMessageEdit(e.target.value)} 
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 outline-none text-white text-sm resize-none"
+                                />
+                            </div>
+
+                            {/* 3. BOTÃO DE CONFIRMAÇÃO */}
+                            <button 
+                                type="submit"
+                                disabled={isProcessing} 
+                                className="w-full bg-blue-600 hover:bg-blue-500 py-3.5 rounded-xl font-bold text-white shadow-lg shadow-blue-900/20"
+                            >
+                                {isProcessing ? <LoadingSpinner /> : `Confirmar Renovação e Enviar (${formatCurrency(client.value)})`}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
 
         const ViewModal = ({ isViewModalOpen, setIsViewModalOpen, viewingItem, InfoField, UserPlus, Smartphone, Calendar, DollarSign, Wifi, FileText, Info, XCircle, formatCurrency, formatDate }) => {
             if (!isViewModalOpen || !viewingItem) return null;
@@ -693,6 +771,11 @@
             const [isBanned, setIsBanned] = useState(false); 
             // CORREÇÃO: Removida a atribuição de valor na desestruturação (setRenewedClientData)
             const [renewedClientData, setRenewedClientData] = useState(null); 
+            
+            // --- NOVOS ESTADOS PARA MODAL DE RENOVAÇÃO MANUAL ---
+            const [isRenewalModalOpen, setIsRenewalModalOpen] = useState(false);
+            const [renewalClientData, setRenewalClientData] = useState(null);
+
 
             // --- ESTADOS DO FINANCEIRO ---
             // CORREÇÃO: Removida a atribuição de valor na desestruturação (setTransactions)
@@ -913,7 +996,7 @@
                 if (!messageClient || !messageEdit) return;
                 setIsProcessing(true);
                 try {
-                    await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), { to: `55${messageClient.whatsapp.replace(/\D/g,'')}`, body: messageEdit, status: 'pending', createdAt: serverTimestamp() });
+                    await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'public', 'bot_messages'), { to: `55${messageClient.whatsapp.replace(/\D/g,'')}`, body: messageEdit, status: 'pending', createdAt: serverTimestamp() });
                     showToast("Mensagem colocada na fila!", 'success'); setIsMessageModalOpen(false); setMessageEdit('');
                 } catch (e) { showToast(`Falha no envio: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
             }, [messageClient, messageEdit, user, showToast]);
@@ -1006,75 +1089,90 @@
                     }
                 });
             };
+            
+            // FUNÇÃO PRINCIPAL DE RENOVAÇÃO (CHAMADA APÓS O MODAL DE EDIÇÃO)
+            const renewClientConfirmed = async (item, messageData) => {
+                setIsProcessing(true);
+                try {
+                    // 1. Atualizar data do cliente
+                    const newDueDate = messageData.newDueDate;
+                    await updateDoc(doc(getClientsCollection(), item.id), { dueDate: newDueDate, status: 'active' });
+                    
+                    // 2. Lançar no Financeiro (AUTOMÁTICO)
+                    const transactionValue = parseFloat(item.value) || 0;
+                    if (transactionValue > 0) {
+                        await addDoc(getTransactionsCollection(), {
+                            description: `Renovação: ${item.name}`,
+                            amount: transactionValue,
+                            type: 'income',
+                            category: 'Mensalidade',
+                            date: new Date().toISOString().split('T')[0], // Data de hoje
+                            userId: user.email,
+                            createdAt: new Date().toISOString()
+                        });
+                    }
 
-            const handleRenew = (item, type) => {
-                setConfirmDialog({
-                    isOpen: true, title: 'Renovar Assinatura', 
-                    // ATUALIZAÇÃO: Mensagem mais clara indicando o lançamento financeiro
-                    message: type === 'client' ? `Renovar ${item.name} por 30 dias e lançar <b>${formatCurrency(item.value)}</b> no Financeiro?` : 'Adicionar 30 dias?',
-                    onConfirm: async () => {
-                        setIsProcessing(true); setConfirmDialog({ isOpen: false }); 
-                        try {
-                            if (type === 'user') {
+                    // 3. Enviar mensagem
+                    if (item.whatsapp && botSession?.status === 'connected' && messageData.body) {
+                        await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'public', 'bot_messages'), { to: `55${item.whatsapp.replace(/\D/g,'')}`, body: messageData.body, status: 'pending', createdAt: serverTimestamp() });
+                    }
+                    
+                    // 4. Define os dados para exibir o modal de sucesso/comprovante
+                    setRenewedClientData({ ...item, dueDate: newDueDate, isClient: true });
+                    showToast('Renovação e Lançamento concluídos!', 'success');
+                    
+                } catch(e) { 
+                    showToast(`Erro: ${e.message}`, 'error'); 
+                } finally { 
+                    setIsProcessing(false); 
+                }
+            };
+            
+            // FUNÇÃO QUE ABRE O MODAL DE MENSAGEM/DATA (Antiga handleRenew)
+            const openRenewalModal = (item, type) => {
+                if (type === 'client') {
+                    // ABRIR O NOVO MODAL DE EDIÇÃO
+                    setRenewalClientData(item);
+                    setIsRenewalModalOpen(true);
+                } else {
+                    // Lógica para REVENDEDOR (Master/Revenda)
+                     setConfirmDialog({
+                        isOpen: true, title: 'Renovar Assinatura', 
+                        message: `Adicionar 30 dias de validade ao painel de <b>${item.name}</b> e lançar <b>${formatCurrency(item.valuePaid)}</b> no Financeiro?`,
+                        onConfirm: async () => {
+                            setIsProcessing(true); setConfirmDialog({ isOpen: false }); 
+                            try {
                                 let e = new Date(); let currentExp = new Date(item.panelExpiration); if (!isNaN(currentExp.getTime()) && currentExp > e) e = currentExp; e.setDate(e.getDate() + 30);
                                 await updateDoc(doc(getUsersCollection(), item.id), { panelExpiration: e.toISOString(), plan: 'renewed' });
                                 
-                                // NOVO: Lançar no Financeiro (Receita de Painel)
+                                // Lançar no Financeiro (Receita de Painel)
                                 const panelValue = parseFloat(item.valuePaid) || 0;
                                 if (panelValue > 0) {
                                     await addDoc(getTransactionsCollection(), {
                                         description: `Renovação Painel: ${item.name}`,
                                         amount: panelValue,
                                         type: 'income',
-                                        category: 'Renovação de Painel', // Categoria específica para Revenda
+                                        category: 'Renovação de Painel',
                                         date: new Date().toISOString().split('T')[0],
                                         userId: user.email,
                                         createdAt: new Date().toISOString()
                                     });
                                 }
 
-                                // NOVO: Define os dados para exibir o modal de sucesso/comprovante do painel
-                                setRenewedClientData({ ...item, panelExpiration: e.toISOString(), isClient: false });
-                                
-                                // NOVO: Enviar mensagem de sucesso de renovação para o revenda
+                                // Enviar mensagem de sucesso de renovação para o revenda
                                 if (item.whatsapp && botSession?.status === 'connected') {
                                     const message = generateWhatsAppMessage({...item, panelExpiration: e.toISOString()}, user, 'team', 'panel_renew_success'); 
-                                    await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), { to: `55${item.whatsapp.replace(/\D/g,'')}`, body: message, status: 'pending', createdAt: serverTimestamp() });
+                                    const finalMessage = message || `✅ *RENOVAÇÃO DE PAINEL CONCLUÍDA!* O painel de ${item.name} foi renovado e agora está ativo.`;
+                                    await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'public', 'bot_messages'), { to: `55${item.whatsapp.replace(/\D/g,'')}`, body: finalMessage, status: 'pending', createdAt: serverTimestamp() });
                                 }
+                                
+                                setRenewedClientData({ ...item, panelExpiration: e.toISOString(), isClient: false });
+                                
 
-                            } else {
-                                // 1. Atualizar data do cliente
-                                let b = new Date(); let currentDue = new Date(item.dueDate); if (!isNaN(currentDue.getTime()) && currentDue > b) b = currentDue; b.setDate(b.getDate() + 30); const newDueDate = b.toISOString().split('T')[0];
-                                await updateDoc(doc(getClientsCollection(), item.id), { dueDate: newDueDate, status: 'active' });
-                                
-                                // 2. Lançar no Financeiro (AUTOMÁTICO)
-                                const transactionValue = parseFloat(item.value) || 0;
-                                if (transactionValue > 0) {
-                                    await addDoc(getTransactionsCollection(), {
-                                        description: `Renovação: ${item.name}`,
-                                        amount: transactionValue,
-                                        type: 'income',
-                                        category: 'Mensalidade',
-                                        date: new Date().toISOString().split('T')[0], // Data de hoje
-                                        userId: user.email,
-                                        createdAt: new Date().toISOString()
-                                    });
-                                }
-
-                                // 3. Enviar mensagem
-                                if (item.whatsapp && botSession?.status === 'connected') {
-                                    const message = generateWhatsAppMessage({...item, dueDate: newDueDate}, user, 'client', 'renew'); 
-                                    await addDoc(collection(db, 'artifacts', appId, 'users', user.id, 'bot_messages'), { to: `55${item.whatsapp.replace(/\D/g,'')}`, body: message, status: 'pending', createdAt: serverTimestamp() });
-                                }
-                                
-                                // NOVO: Define os dados para exibir o modal de sucesso/comprovante
-                                setRenewedClientData({ ...item, dueDate: newDueDate, isClient: true });
-                                
-                            }
-                            
-                        } catch(e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
-                    }
-                });
+                            } catch(e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
+                        }
+                    });
+                }
             };
 
             const handleUpdateProfile = async (e) => {
@@ -1301,6 +1399,18 @@
                     {isMessageModalOpen && <MessageModal messageClient={messageClient} messageEdit={messageEdit} setMessageEdit={setMessageEdit} isProcessing={isProcessing} setIsMessageModalOpen={setIsMessageModalOpen} showToast={showToast} sendBotMessageFromModal={sendBotMessageFromModal} />} 
                     {isViewModalOpen && <ViewModal isViewModalOpen={isViewModalOpen} setIsViewModalOpen={setIsViewModalOpen} viewingItem={viewingItem} InfoField={InfoField} UserPlus={UserPlus} Smartphone={Smartphone} Calendar={Calendar} DollarSign={DollarSign} Wifi={Wifi} FileText={FileText} Info={Info} XCircle={XCircle} formatCurrency={formatCurrency} formatDate={formatDate} />} 
                     {isPanelExpModalOpen && <PanelExpModal />}
+                    {/* MODAL DE EDIÇÃO DE RENOVAÇÃO (CLIENTE) */}
+                    {isRenewalModalOpen && renewalClientData && renewalClientData.email === undefined && (
+                        <RenewalMessageModal 
+                            isOpen={isRenewalModalOpen}
+                            onClose={() => setIsRenewalModalOpen(false)}
+                            client={renewalClientData}
+                            user={user}
+                            isProcessing={isProcessing}
+                            showToast={showToast}
+                            renewClientConfirmed={renewClientConfirmed}
+                        />
+                    )}
                     {/* MODAIS DE SUCESSO DE RENOVAÇÃO (CLIENTE OU PAINEL) */}
                     {renewedClientData && renewedClientData.isClient && (
                         <RenewalSuccessModal 
@@ -1551,7 +1661,8 @@
                                                         <td className="px-6 py-4 text-right flex justify-end gap-2 whitespace-nowrap">
                                                             <ActionButton onClick={() => {setViewingItem(client); setIsViewModalOpen(true);}} color="orange" icon={Eye} />
                                                             {client.whatsapp && botSession?.status === 'connected' && <ActionButton onClick={() => handleOpenMessageModal(client, 'client')} color="purple" icon={Send} />}
-                                                            <ActionButton onClick={()=>handleRenew(client, 'client')} color="blue" icon={RefreshCw} />
+                                                            {/* 🛑 AÇÃO DE RENOVAR: CHAMA O NOVO MODAL 🛑 */}
+                                                            <ActionButton onClick={()=>openRenewalModal(client, 'client')} color="blue" icon={RefreshCw} />
                                                             <ActionButton onClick={()=>{setEditingItem(client); setFormData(client); setModalType('client'); setIsAddModalOpen(true);}} color="slate" icon={Edit} />
                                                             <ActionButton onClick={()=>handleDelete(client.id, 'client')} color="red" icon={Trash2} />
                                                         </td>
@@ -1595,7 +1706,7 @@
                                                         <td className="px-6 py-4 font-bold text-white">{member.name}</td>
                                                         <td className="px-6 py-4"><RoleBadge role={member.role} /></td>
                                                         <td className="px-6 py-4">{panelContentWithPrice}</td>
-                                                        <td className="px-6 py-4 text-right flex justify-end gap-2"><ActionButton onClick={() => {setViewingItem(member); setIsViewModalOpen(true);}} color="orange" icon={Eye} />{(user.role === 'ceo' || user.role === 'master') && <ActionButton onClick={()=>{setEditingItem(member); setModalType('user'); setIsPanelExpModalOpen(true);}} color="yellow" icon={Clock} title="Ajustar Dias" />}<ActionButton onClick={()=>handleRenew(member, 'user')} color="blue" icon={RefreshCw} /><ActionButton onClick={()=>{setEditingItem(member); setFormData(member); setNewMemberRole(member.role); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} /><ActionButton onClick={()=>handleDelete(member.id, 'user')} color="red" icon={Trash2} /></td></tr>
+                                                        <td className="px-6 py-4 text-right flex justify-end gap-2"><ActionButton onClick={() => {setViewingItem(member); setIsViewModalOpen(true);}} color="orange" icon={Eye} />{(user.role === 'ceo' || user.role === 'master') && <ActionButton onClick={()=>{setEditingItem(member); setModalType('user'); setIsPanelExpModalOpen(true);}} color="yellow" icon={Clock} title="Ajustar Dias" />}<ActionButton onClick={()=>openRenewalModal(member, 'user')} color="blue" icon={RefreshCw} /><ActionButton onClick={()=>{setEditingItem(member); setFormData(member); setNewMemberRole(member.role); setModalType('user'); setIsAddModalOpen(true);}} color="slate" icon={Edit} /><ActionButton onClick={()=>handleDelete(member.id, 'user')} color="red" icon={Trash2} /></td></tr>
                                                     );
                                                 })}</tbody></table>
                                             </div>
