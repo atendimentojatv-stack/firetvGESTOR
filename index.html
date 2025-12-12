@@ -2,7 +2,6 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <!-- CORREÇÃO: Meta viewport mantida com settings para máxima compatibilidade mobile -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>FIRE GESTOR - Sistema IPTV + Bot + Financeiro</title>
     
@@ -29,8 +28,7 @@
                     keyframes: {
                         fadeIn: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
                         slideIn: { '0%': { transform: 'translateX(100%)' }, '100%': { transform: 'translateX(0)' } },
-                        glow: { '0%': { boxShadow: '0 0 20px rgba(249, 115, 22, 0.5)' }, '100%': { boxShadow: '0 0 40px rgba(249, 115, 22, 0.8), 0 0 10px rgba(255,255,255,0.5)' } }
-                        ,
+                        glow: { '0%': { boxShadow: '0 0 20px rgba(249, 115, 22, 0.5)' }, '100%': { boxShadow: '0 0 40px rgba(249, 115, 22, 0.8), 0 0 10px rgba(255,255,255,0.5)' } },
                         'pulse-custom': { '0%, 100%': { opacity: '1', boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.7)' }, '50%': { opacity: '0.8', boxShadow: '0 0 0 10px rgba(16, 185, 129, 0)' } }
                     }
                 }
@@ -351,15 +349,12 @@
                                 <CheckCircle size={40} className="text-green-400" />
                             </div>
                             
-                            {/* CORREÇÃO MOBILE: Reduzido o tamanho da fonte no mobile de text-3xl para text-2xl */}
-                            <h2 className="text-2xl md:text-3xl font-black text-white mb-2">SUCESSO! Ativação Pendente</h2>
-                            {/* CORREÇÃO MOBILE: Reduzido o tamanho da fonte no mobile de text-lg para text-base */}
-                            <p className="text-green-400 text-base md:text-lg font-semibold">Seu teste GRÁTIS de 7 dias está PRONTO para começar!</p>
+                            <h2 className="text-3xl font-black text-white mb-2">SUCESSO! Ativação Pendente</h2>
+                            <p className="text-green-400 text-lg font-semibold">Seu teste GRÁTIS de 7 dias está PRONTO para começar!</p>
                         </div>
 
                         <div className="bg-slate-800 p-6 rounded-xl border border-green-700 space-y-4">
-                            {/* CORREÇÃO MOBILE: Reduzido o tamanho da fonte no mobile de text-lg para text-base */}
-                            <p className="text-white font-bold text-center text-base md:text-lg flex items-center justify-center gap-2"><Zap size={20} className="text-yellow-400"/> Passos CRUCIAIS para Iniciar:</p>
+                            <p className="text-white font-bold text-center text-lg flex items-center justify-center gap-2"><Zap size={20} className="text-yellow-400"/> Passos CRUCIAIS para Iniciar:</p>
                             <ol className="list-decimal list-inside text-sm text-slate-300 space-y-3 pl-4">
                                 <li>A sua conta foi **PRÉ-CRIADA** para validação.</li>
                                 <li>Por favor, **ABRA O E-MAIL** que você cadastrou (Gmail, Outlook, etc.).</li>
@@ -369,8 +364,7 @@
                                 <li>Depois da verificação, **VOLTE** aqui no Gestor de Clientes.</li>
                                 <li>Clique em **<span className="text-orange-400 font-bold">ENTRAR</span>**, insira o E-mail e a Senha que você acabou de cadastrar.</li>
                             </ol>
-                            {/* CORREÇÃO MOBILE: Reduzido o tamanho da fonte no mobile de text-lg para text-base */}
-                            <p className="text-center font-bold text-base md:text-lg text-green-400 pt-2">PRONTO! Desfrute do melhor gestor de clientes por 7 dias!</p>
+                            <p className="text-center font-bold text-lg text-green-400 pt-2">PRONTO! Desfrute do melhor gestor de clientes por 7 dias!</p>
                         </div>
                         
                         <button onClick={() => setShowRegistrationSuccess(false)} className="mt-8 w-full bg-orange-600 hover:bg-orange-500 text-white font-bold text-lg py-4 rounded-xl transition-all shadow-lg shadow-orange-900/50">
@@ -657,8 +651,10 @@
             const [expDays, setExpDays] = useState(0); 
             // CORREÇÃO: Removida a atribuição de valor na desestruturação (setMessageTarget)
             const [messageTarget, setMessageTarget] = useState('client');
-            // CORREÇÃO: Removida a atribuição de valor na desestruturação (setSelectedClients)
-            const [selectedClients, setSelectedClients] = useState([]);
+            
+            // NOVO ESTADO PARA SELEÇÃO MÚLTIPLA
+            const [selectedClientIds, setSelectedClientIds] = useState([]); 
+            
             // CORREÇÃO: Removida a atribuição de valor na desestruturação (setIsImportModalOpen)
             const [isImportModalOpen, setIsImportModalOpen] = useState(false);
             // CORREÇÃO: Removida a atribuição de valor na desestruturação (setSettingsView)
@@ -709,6 +705,60 @@
             const [transactionFormData, setTransactionFormData] = useState({ description: '', amount: '', type: 'income', date: new Date().toISOString().split('T')[0], category: 'Mensalidade' });
 
             const showToast = (message, type = 'success') => setNotification({ show: true, message, type });
+
+            // --- FUNÇÕES DE SELEÇÃO MÚLTIPLA E EXCLUSÃO EM MASSA (NOVO) ---
+            const handleSelectAll = (e) => {
+                if (e.target.checked) {
+                    setSelectedClientIds(filteredClients.map(c => c.id));
+                } else {
+                    setSelectedClientIds([]);
+                }
+            };
+
+            const handleSelectClient = (id) => {
+                setSelectedClientIds(prev => 
+                    prev.includes(id) 
+                        ? prev.filter(clientId => clientId !== id)
+                        : [...prev, id]
+                );
+            };
+            
+            const handleDeleteSelectedClients = () => {
+                if (selectedClientIds.length === 0) {
+                    return showToast("Selecione pelo menos um cliente para deletar.", 'error');
+                }
+
+                setConfirmDialog({
+                    isOpen: true,
+                    title: `Excluir ${selectedClientIds.length} Cliente(s)?`,
+                    message: `Esta ação <b>PERMANENTE</b> removerá os ${selectedClientIds.length} clientes selecionados da raiz do sistema. Deseja continuar?`,
+                    onConfirm: async () => {
+                        setIsProcessing(true);
+                        setConfirmDialog({ isOpen: false });
+                        
+                        // Otimistic UI Update
+                        setClients(prev => prev.filter(c => !selectedClientIds.includes(c.id)));
+                        setSelectedClientIds([]);
+
+                        try {
+                            const batch = writeBatch(db);
+                            selectedClientIds.forEach(id => {
+                                const docRef = doc(getClientsCollection(), id);
+                                batch.delete(docRef);
+                            });
+                            await batch.commit();
+                            
+                            showToast(`${selectedClientIds.length} clientes excluídos permanentemente!`, 'success');
+                        } catch(e) {
+                            showToast(`Erro ao excluir clientes: ${e.message}`, 'error');
+                        } finally {
+                            setIsProcessing(false);
+                        }
+                    }
+                });
+            };
+
+            // --- FIM FUNÇÕES DE SELEÇÃO MÚLTIPLA ---
 
             // --- FUNÇÕES FINANCEIRAS ---
             const handleSaveTransaction = async (e) => {
@@ -796,19 +846,23 @@
                 return () => unsub();
             }, []); 
 
+            // CORREÇÃO CRÍTICA AQUI: Atualiza os estados de configuração (msgCompany, msgTemplates, botSendTime) APENAS quando o objeto 'user' muda.
+            // Isso garante que os dados recém-carregados ou salvos no objeto 'user' sejam refletidos nos campos do formulário.
             useEffect(() => {
                 if (user) {
                     setMsgCompany(user.companyName || "Fire Gestor");
-                    // ATUALIZAÇÃO CRÍTICA: Inicialização segura dos templates com verificação profunda
+                    
+                    // Inicialização segura dos templates com verificação profunda
                     const saved = user.messageTemplates || {};
                     const initialTemplates = { 
                         client: saved.client || {}, 
                         team: saved.team || {} 
                     };
                     setMsgTemplates(initialTemplates);
+                    
                     setBotSendTime(user.botSendTime || "09:00");
                 }
-            }, [user]);
+            }, [user]); // Dependência apenas em 'user' para reagir a qualquer mudança nele.
             
             useEffect(() => {
                 if (!user) return;
@@ -1036,14 +1090,13 @@
             const handleSaveMessageConfig = async (e) => {
                 e.preventDefault(); setIsProcessing(true);
                 try {
-                    // CORREÇÃO CRÍTICA: Use o operador OR (||) com string vazia ('') para garantir
-                    // que, se o campo for undefined/null no estado, ele seja salvo como '' (válido no Firestore)
+                    // 1. CONSTRÓI O OBJETO FINAL DE TEMPLATES
                     const finalTemplates = { 
                         client: {
                             expired: msgTemplates.client?.expired || '',
                             today: msgTemplates.client?.today || '',
                             expiring: msgTemplates.client?.expiring || '',
-                            renew: msgTemplates.client?.renew || '', // CORREÇÃO APLICADA AQUI
+                            renew: msgTemplates.client?.renew || '', 
                         },
                         team: {
                             team_contact: msgTemplates.team?.team_contact || '',
@@ -1053,16 +1106,32 @@
                         }
                     };
 
-                    const updatedFields = { companyName: msgCompany, messageTemplates: finalTemplates, botSendTime: botSendTime };
-                    if (user.role === 'ceo') { updatedFields.aiApiKey = ceoApiKey; setUserApiKey(ceoApiKey); }
+                    const updatedFields = { 
+                        companyName: msgCompany, 
+                        messageTemplates: finalTemplates, 
+                        botSendTime: botSendTime 
+                    };
+
+                    if (user.role === 'ceo') { 
+                        updatedFields.aiApiKey = ceoApiKey; 
+                        setUserApiKey(ceoApiKey); 
+                    }
+                    
+                    // 2. ATUALIZA O FIRESTORE
                     await updateDoc(doc(getUsersCollection(), user.id), updatedFields); 
                     
-                    // ATUALIZA O ESTADO LOCAL DO USUÁRIO APÓS SALVAR
-                    setUser(prev => ({...prev, ...updatedFields})); 
+                    // 3. ATUALIZA O ESTADO LOCAL (React) E LOCAL STORAGE PARA PERSISTÊNCIA NO F5
+                    const newUserState = {
+                        ...user, 
+                        ...updatedFields, 
+                        messageTemplates: finalTemplates // Garante que o objeto aninhado esteja correto no estado
+                    };
                     
-                    showToast("Salvo!", 'success');
+                    setUser(newUserState);
+                    localStorage.setItem('firetv_user_session', JSON.stringify(newUserState)); // Salva no localStorage imediatamente
+                    
+                    showToast("Configurações de mensagens salvas com sucesso!", 'success');
                 } catch (e) { 
-                    // Melhor log de erro para debug
                     console.error("Erro ao salvar configuração de mensagem:", e);
                     showToast(`Erro ao salvar: ${e.message}. Verifique o console.`, 'error'); 
                 } finally { 
@@ -1417,9 +1486,40 @@
                                             <button onClick={()=>setFilterStatus('expired')} className={`whitespace-nowrap px-4 py-2 rounded-lg text-sm font-bold ${filterStatus==='expired'?'bg-orange-500':'bg-slate-800 text-slate-400'}`}>Vencidos ({stats.expired})</button>
                                         </div>
                                     </div>
+                                    
+                                    {/* BARRA DE AÇÕES EM MASSA (NOVA) */}
+                                    {selectedClientIds.length > 0 && (
+                                         <div className="p-4 bg-red-900/30 border-b border-red-500/50 flex justify-between items-center animate-fade-in">
+                                            <span className="text-sm font-bold text-white">{selectedClientIds.length} cliente(s) selecionado(s)</span>
+                                            <button 
+                                                onClick={handleDeleteSelectedClients}
+                                                disabled={isProcessing}
+                                                className="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-xl text-sm flex items-center gap-2 transition-all"
+                                            >
+                                                {isProcessing ? <LoadingSpinner size={16} /> : <Trash2 size={16} />} 
+                                                Deletar Selecionados
+                                            </button>
+                                        </div>
+                                    )}
+
                                     <div className="overflow-x-auto w-full"> 
                                         <table className="w-full text-left text-sm text-slate-400">
-                                            <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10"><tr><th className="px-6 py-4">Nome</th><th className="px-6 py-4">Vencimento</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Ações</th></tr></thead>
+                                            <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold sticky top-0 z-10">
+                                                <tr>
+                                                    {/* CHECKBOX SELECIONAR TODOS (NOVO) */}
+                                                    <th className="px-3 py-4 w-10">
+                                                         <input type="checkbox" 
+                                                             onChange={handleSelectAll}
+                                                             checked={selectedClientIds.length > 0 && selectedClientIds.length === filteredClients.length}
+                                                             className="w-4 h-4 text-red-600 bg-slate-700 border-slate-600 rounded focus:ring-red-500"
+                                                         />
+                                                    </th>
+                                                    <th className="px-6 py-4">Nome</th>
+                                                    <th className="px-6 py-4">Vencimento</th>
+                                                    <th className="px-6 py-4">Status</th>
+                                                    <th className="px-6 py-4 text-right">Ações</th>
+                                                </tr>
+                                            </thead>
                                             <tbody className="divide-y divide-slate-800">{filteredClients.map(client => {
                                                 const statusData = getClientStatus(client.dueDate);
                                                 const colorClass = statusColorMap[statusData.status] || statusColorMap.no_date;
@@ -1435,6 +1535,14 @@
                                                 
                                                 return (
                                                     <tr key={client.id} className="hover:bg-slate-800/30">
+                                                        {/* CHECKBOX INDIVIDUAL (NOVO) */}
+                                                        <td className="px-3 py-4 w-10">
+                                                             <input type="checkbox" 
+                                                                 checked={selectedClientIds.includes(client.id)}
+                                                                 onChange={() => handleSelectClient(client.id)}
+                                                                 className="w-4 h-4 text-red-600 bg-slate-700 border-slate-600 rounded focus:ring-red-500"
+                                                             />
+                                                        </td>
                                                         <td className={`px-6 py-4 font-bold text-white whitespace-nowrap border-l-4 ${colorClass}`}>{client.name}</td>
                                                         <td className="px-6 py-4 whitespace-nowrap">{formatDate(client.dueDate)}</td>
                                                         <td className="px-6 py-4 whitespace-nowrap">
