@@ -1,45 +1,80 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FIRE GESTOR - Sistema IPTV + Bot + Financeiro</title>
-    
-    <!-- FAVICON -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f97316' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='9' cy='7' r='4'/%3E%3Cpath d='M22 21v-2a4 4 0 0 0-3-3.87'/%3E%3Cpath d='M16 3.13a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>FIRE GESTOR - Sistema IPTV + Bot + Financeiro</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        slate: { 950: '#020617' }
-                    },
-                    animation: {
-                        'fade-in': 'fadeIn 0.3s ease-out',
-                        'slide-in': 'slideIn 0.3s ease-out',
-                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                        'bounce-slow': 'bounce 2s infinite',
-                        'glow': 'glow 2s ease-in-out infinite alternate',
-                        // NOVO: Animação de pulsação mais focada para o verde
-                        'pulse-green': 'pulse-custom 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                    },
-                    keyframes: {
-                        fadeIn: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
-                        slideIn: { '0%': { transform: 'translateX(100%)' }, '100%': { transform: 'translateX(0)' } },
-                        glow: { '0%': { boxShadow: '0 0 20px rgba(249, 115, 22, 0.5)' }, '100%': { boxShadow: '0 0 40px rgba(249, 115, 22, 0.8), 0 0 10px rgba(255,255,255,0.5)' } },
-                        'pulse-custom': { '0%, 100%': { opacity: '1', boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.7)' }, '50%': { opacity: '0.8', boxShadow: '0 0 0 10px rgba(16, 185, 129, 0)' } }
-                    }
-                }
+  <!-- FAVICON -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f97316' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='9' cy='7' r='4'/%3E%3Cpath d='M22 21v-2a4 4 0 0 0-3-3.87'/%3E%3Cpath d='M16 3.13a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            slate: {
+              950: '#020617'
             }
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.3s ease-out',
+            'slide-in': 'slideIn 0.3s ease-out',
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'bounce-slow': 'bounce 2s infinite',
+            'glow': 'glow 2s ease-in-out infinite alternate',
+            // NOVO: Animação de pulsação mais focada para o verde
+            'pulse-green': 'pulse-custom 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': {
+                opacity: '0',
+                transform: 'translateY(10px)'
+              },
+              '100%': {
+                opacity: '1',
+                transform: 'translateY(0)'
+              }
+            },
+            slideIn: {
+              '0%': {
+                transform: 'translateX(100%)'
+              },
+              '100%': {
+                transform: 'translateX(0)'
+              }
+            },
+            glow: {
+              '0%': {
+                boxShadow: '0 0 20px rgba(249, 115, 22, 0.5)'
+              },
+              '100%': {
+                boxShadow: '0 0 40px rgba(249, 115, 22, 0.8), 0 0 10px rgba(255,255,255,0.5)'
+              }
+            },
+            'pulse-custom': {
+              '0%, 100%': {
+                opacity: '1',
+                boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.7)'
+              },
+              '50%': {
+                opacity: '0.8',
+                boxShadow: '0 0 0 10px rgba(16, 185, 129, 0)'
+              }
+            }
+          }
         }
-    </script>
-    
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+      }
+    }
+  </script>
 
-    <script type="importmap">
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <script type="importmap">
     {
       "imports": {
         "react": "https://esm.sh/react@18.2.0",
@@ -52,28 +87,62 @@
     }
     </script>
 
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #020617; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #0f172a; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #475569; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
-        .prose-invert h1, .prose-invert h2 { color: white; font-weight: bold; margin-bottom: 0.5em; margin-top: 1em; }
-        .bg-grid-slate-800\/10 {
-            background-image: linear-gradient(to right, #1e293b 1px, transparent 1px),
-                              linear-gradient(to bottom, #1e293b 1px, transparent 1px);
-            background-size: 40px 40px;
-            opacity: 0.1;
-        }
-    </style>
-</head>
-<body class="text-white antialiased">
-    <div id="root"></div>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #020617;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
 
-    <script type="text/babel" data-type="module">
-        import React, { useState, useEffect, useMemo, useCallback, useLayoutEffect } from 'react';
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none;
+    }
+
+    .pb-safe {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .prose-invert h1,
+    .prose-invert h2 {
+      color: white;
+      font-weight: bold;
+      margin-bottom: 0.5em;
+      margin-top: 1em;
+    }
+
+    .bg-grid-slate-800\/10 {
+      background-image: linear-gradient(to right, #1e293b 1px, transparent 1px),
+        linear-gradient(to bottom, #1e293b 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.1;
+    }
+  </style>
+</head>
+
+<body class="text-white antialiased">
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    import React, { useState, useEffect, useMemo, useCallback, useLayoutEffect } from 'react';
         import { createRoot } from 'react-dom/client';
         import { initializeApp } from 'firebase/app';
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification, updatePassword, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
@@ -226,16 +295,14 @@
 
             const defaultGreeting = `Olá *{nome}*, tudo bem? Aqui é do *{empresa}*.\n\n`;
             
-            const clientDefaults = {
-                expired: templates.client?.expired || defaultGreeting + `⚠️ *SEU PLANO DE {valor} ESTÁ VENCIDO* há {dias} dias.\nEvite o corte do sinal, renove agora mesmo!`,
-                today: templates.client?.today || defaultGreeting + `⚠️ *ATENÇÃO:* Seu plano de {valor} vence *HOJE*.\nGaranta a renovação para não perder a programação.`,
-                expiring: templates.client?.expiring || defaultGreeting + `⏳ Seu plano ({valor}) vence em apenas *{dias} dias* ({vencimento}).\nQue tal já deixar renovado?`,
-                active: templates.client?.active || defaultGreeting + `✅ Seu plano de {valor} está ativo até *{vencimento}*.\nAgradecemos a preferência!`,
-                // CORREÇÃO: Template padrão de renovação para uso manual no Painel Web
-                renew: templates.client?.renew || defaultGreeting + `🥳 *RENOVAÇÃO APLICADA!* Seu plano de {valor} foi renovado com sucesso e agora está ativo até *{vencimento}*.\nObrigado pela preferência!`,
-                no_date: defaultGreeting + `Seu plano ({valor}) está com data de vencimento pendente. Por favor, verifique.`,
-                no_status: defaultGreeting + `Seu plano ({valor}) está ativo.`
-            };
+          const clientDefaults = {
+    // Aqui dizemos ao sistema: "Use o que o usuário escreveu. Se estiver vazio, use esse padrão"
+    expired: templates.expired || `⚠️ *PLANO VENCIDO* - Olá ${item.name}, seu plano venceu. Entre em contato para renovar!`,
+    today: templates.today || `⚠️ *VENCE HOJE* - Olá ${item.name}, seu plano vence hoje. Não fique sem sinal!`,
+    expiring: templates.expiring || `⏳ *VENCENDO* - Olá ${item.name}, seu plano vence em ${days} dias.`,
+    active: templates.active || `✅ *ATIVO* - Olá ${item.name}, seu plano está ativo até ${formatDate(item.dueDate)}.`,
+    renew: templates.renew || `🥳 *RENOVADO* - Olá ${item.name}, seu plano foi renovado com sucesso!`
+};
             
             // NOVO: Templates de Revenda/Painel
             const teamDefaults = {
@@ -2061,4 +2128,5 @@
         root.render(<ErrorBoundary><FireTVManager /></ErrorBoundary>);
     </script>
 </body>
+
 </html>
