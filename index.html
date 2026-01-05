@@ -678,9 +678,9 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
             const [csvHeaders, setCsvHeaders] = useState([]);
             const [mapping, setMapping] = useState({ name: '', whatsapp: '', dueDate: '', value: '', username: '', observation: '' });
             const [importProgress, setImportProgress] = useState(0);
-            const [isExporting, setIsExporting] = useState(false); // Novo estado visual
+            const [isExporting, setIsExporting] = useState(false);
 
-            // --- FUNÇÃO DE EXPORTAÇÃO (CORRIGIDA) ---
+            // --- 1. FUNÇÃO DE EXPORTAÇÃO ---
             const handleExport = () => {
                 if (!clients || clients.length === 0) return showToast("Sem clientes para exportar.", 'error');
                 
@@ -689,26 +689,24 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                     // Cabeçalho do CSV
                     const headers = ['Nome', 'WhatsApp', 'Vencimento (AAAA-MM-DD)', 'Valor', 'Login', 'Observação', 'Status'];
                     
-                    // Dados
+                    // Dados formatados para CSV (Excel BR prefere ponto e vírgula)
                     const rows = clients.map(c => {
-                        // Tratamento para evitar quebras no CSV (aspas e ponto e vírgula)
                         const safe = (txt) => `"${(txt || '').toString().replace(/"/g, '""')}"`;
-                        
                         return [
                             safe(c.name),
                             safe(c.whatsapp),
-                            safe(c.dueDate), // Mantém formato ISO para facilitar reimportação ou formatação no Excel
-                            safe((c.value || 0).toString().replace('.', ',')), // Formato BR
+                            safe(c.dueDate),
+                            safe((c.value || 0).toString().replace('.', ',')), // Formato R$ (10,00)
                             safe(c.username),
                             safe(c.observation),
                             safe(c.status)
-                        ].join(';'); // Separador ; é melhor para Excel em PT-BR
+                        ].join(';'); 
                     });
 
-                    // Unir tudo com BOM para acentos funcionarem no Excel
+                    // \uFEFF é o BOM para o Excel reconhecer acentos corretamente
                     const csvContent = "\uFEFF" + [headers.join(';'), ...rows].join('\n');
                     
-                    // Criar Blob e Link de Download
+                    // Download
                     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                     const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
@@ -727,73 +725,91 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                 }
             };
 
+            // --- 2. LEITURA DO ARQUIVO CSV ---
             const handleFileRead = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
+
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     const text = event.target.result;
                     const lines = text.split(/\r\n|\n/).filter(l => l.trim() !== '');
                     if (lines.length < 2) return showToast("CSV inválido ou vazio.", 'error'); 
                     
-                    // Tenta detectar delimitador (; ou ,)
+                    // Detecta delimitador (; ou ,)
                     const firstLine = lines[0];
                     const delimiter = firstLine.includes(';') ? ';' : ',';
                     
+                    // Limpa aspas dos cabeçalhos
                     const headers = firstLine.split(delimiter).map(h => h.trim().replace(/"/g, ''));
                     setCsvHeaders(headers);
                     
+                    // Processa as linhas
                     const data = lines.slice(1).map(line => {
-                        // Regex complexo para ignorar delimitadores dentro de aspas (ex: "Silva, Joao")
-                        // Se for simples demais, use split(delimiter) direto, mas cuidado com virgulas no nome
+                        // Regex para separar mantendo texto entre aspas intacto (ex: "Silva, Joao")
+                        // Se não tiver aspas complexas, o split simples resolve a maioria
                         const values = line.split(delimiter).map(v => v.trim().replace(/"/g, ''));
-                        let obj = {}; headers.forEach((h, i) => obj[h] = values[i] || ''); return obj;
+                        let obj = {}; 
+                        headers.forEach((h, i) => obj[h] = values[i] || ''); 
+                        return obj;
                     });
-                    setCsvData(data); autoMapHeaders(headers); setStep(2);
+
+                    setCsvData(data); 
+                    autoMapHeaders(headers); // Tenta adivinhar as colunas
+                    setStep(2); // Vai para tela de mapeamento
                 };
                 reader.readAsText(file, 'UTF-8');
             };
 
+            // --- 3. AUTO-MAPEAMENTO INTELIGENTE ---
             const autoMapHeaders = (headers) => {
                 let newMapping = {};
                 headers.forEach(h => {
                     const lh = h.toLowerCase();
-                    if (['nome', 'cliente', 'name'].some(v => lh.includes(v)) && !newMapping.name) newMapping.name = h;
-                    if (['whatsapp', 'celular', 'phone', 'tel'].some(v => lh.includes(v)) && !newMapping.whatsapp) newMapping.whatsapp = h;
-                    if (['vencimento', 'data', 'due', 'expire'].some(v => lh.includes(v)) && !newMapping.dueDate) newMapping.dueDate = h;
-                    if (['valor', 'price', 'value', 'mensalidade'].some(v => lh.includes(v)) && !newMapping.value) newMapping.value = h;
+                    // Lógica para tentar adivinhar qual coluna é qual
+                    if (['nome', 'cliente', 'name', 'nom'].some(v => lh.includes(v)) && !newMapping.name) newMapping.name = h;
+                    if (['whatsapp', 'celular', 'phone', 'tel', 'zap'].some(v => lh.includes(v)) && !newMapping.whatsapp) newMapping.whatsapp = h;
+                    if (['vencimento', 'data', 'due', 'expire', 'validade'].some(v => lh.includes(v)) && !newMapping.dueDate) newMapping.dueDate = h;
+                    if (['valor', 'price', 'value', 'mensalidade', 'preço'].some(v => lh.includes(v)) && !newMapping.value) newMapping.value = h;
                     if (['usuario', 'login', 'username', 'user'].some(v => lh.includes(v)) && !newMapping.username) newMapping.username = h;
+                    if (['obs', 'observacao', 'note'].some(v => lh.includes(v)) && !newMapping.observation) newMapping.observation = h;
                 });
                 setMapping(newMapping);
             };
 
+            // --- 4. PROCESSAMENTO DA IMPORTAÇÃO (BANCO DE DADOS) ---
             const processImport = async () => {
                 if (!mapping.name || !mapping.dueDate) return showToast("Mapeie pelo menos 'Nome' e 'Vencimento'.", 'error');
-                setStep(3); 
                 
-                // --- CORREÇÃO DO BATCH (LOTE) ---
+                setStep(3); // Mostra loading
+                
+                // Inicializa Batch (Lote)
                 let batch = writeBatch(db); 
-                let count = 0;
-                let batchCount = 0; // Contador local para o lote atual
+                let count = 0; // Total importado
+                let batchCount = 0; // Contador do lote atual (max 500)
 
                 try {
                     for (const row of csvData) {
                         const rawDate = row[mapping.dueDate];
                         const fmtDate = formatDateForImport(rawDate);
                         
-                        // Validação básica se data existe
+                        // Pula se não tiver data válida
                         if (!fmtDate) continue;
+
+                        // Tratamento do Valor (Converte "10,00" para 10.00)
+                        let rawValue = row[mapping.value] || '0';
+                        if (typeof rawValue === 'string') rawValue = rawValue.replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
 
                         const newClient = {
                             name: row[mapping.name] || 'Sem Nome', 
                             whatsapp: (row[mapping.whatsapp] || '').replace(/\D/g, ''),
                             dueDate: fmtDate, 
-                            value: parseFloat((row[mapping.value] || '0').replace(',', '.')) || 0,
+                            value: parseFloat(rawValue) || 0,
                             username: row[mapping.username] || '', 
                             observation: row[mapping.observation] || '',
                             createdBy: user.email, 
                             createdAt: new Date().toISOString(), 
-                            status: 'active'
+                            status: 'active' // Define como ativo por padrão na importação
                         };
 
                         if (newClient.name) {
@@ -802,10 +818,10 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                             count++; 
                             batchCount++;
                             
-                            // Limite do Firestore é 500 ops por batch. Usamos 450 para margem de segurança.
+                            // Limite do Firestore é 500 ops por batch. Usamos 450 para segurança.
                             if (batchCount >= 450) {
                                 await batch.commit();
-                                batch = writeBatch(db); // CRUCIAL: Reinicia o batch após commitar
+                                batch = writeBatch(db); // Reinicia o batch
                                 batchCount = 0;
                             }
                         }
@@ -813,7 +829,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                         setImportProgress(Math.round((count / csvData.length) * 100));
                     }
                     
-                    // Commita o restante que sobrou (se batchCount > 0)
+                    // Commita o restante que sobrou (se houver)
                     if (batchCount > 0) {
                         await batch.commit();
                     }
@@ -823,88 +839,107 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                 } catch (error) {
                     console.error("Erro na importação:", error);
                     showToast("Erro ao importar: " + error.message, 'error');
-                    setStep(2); // Volta para tela de mapeamento
+                    setStep(2); // Volta para tela de mapeamento em caso de erro
                 }
             };
 
+            // Função Auxiliar: Converte DD/MM/YYYY para YYYY-MM-DD
             const formatDateForImport = (dateStr) => {
                 if (!dateStr) return null;
-                // Tenta limpar espaços extras
-                const cleanStr = dateStr.trim().split(' ')[0];
+                const cleanStr = dateStr.trim().split(' ')[0]; // Remove horas se houver
                 
                 // Se já estiver em YYYY-MM-DD
                 if (cleanStr.match(/^\d{4}-\d{2}-\d{2}$/)) return cleanStr;
 
-                // Se estiver em DD/MM/YYYY
-                const parts = cleanStr.split('/');
-                if (parts.length === 3) {
-                    // Retorna YYYY-MM-DD
-                    return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                // Se estiver em DD/MM/YYYY ou DD-MM-YYYY
+                if (cleanStr.includes('/') || cleanStr.includes('-')) {
+                    const separator = cleanStr.includes('/') ? '/' : '-';
+                    const parts = cleanStr.split(separator);
+                    if (parts.length === 3) {
+                        // Assume dia/mês/ano
+                        const day = parts[0].padStart(2, '0');
+                        const month = parts[1].padStart(2, '0');
+                        const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2]; // Trata ano '24' como '2024'
+                        return `${year}-${month}-${day}`;
+                    }
                 }
                 
-                // Se não reconheceu, retorna null para não bugar o banco
                 return null; 
             };
 
             return (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-fade-in">
                     <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl shadow-2xl flex flex-col">
-                        <div className="p-5 border-b border-slate-800 flex justify-between items-center"><h2 className="font-bold text-white text-lg flex items-center gap-2"><FileText size={20}/>  Exportar/ Importar</h2><button onClick={onClose}><X size={18}/></button></div>
-                        <div className="p-6 h-[400px] overflow-y-auto">
+                        <div className="p-5 border-b border-slate-800 flex justify-between items-center">
+                            <h2 className="font-bold text-white text-lg flex items-center gap-2"><FileText size={20}/>  Exportar/ Importar</h2>
+                            <button onClick={onClose}><X size={18} className="text-slate-400 hover:text-white"/></button>
+                        </div>
+                        
+                        <div className="p-6 h-[450px] overflow-y-auto">
+                            {/* PASSO 1: ESCOLHER AÇÃO */}
                             {step === 1 && (
                                 <div className="space-y-4 text-center">
-                                    <button onClick={handleExport} disabled={isExporting} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2">
+                                    <button onClick={handleExport} disabled={isExporting} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20 transition-all">
                                         {isExporting ? <LoadingSpinner size={20}/> : <Send size={20} className="rotate-180" />} 
-                                        {isExporting ? 'Gerando CSV...' : 'Exportar Clientes (.CSV)'}
+                                        {isExporting ? 'Gerando Planilha...' : 'Exportar Clientes (.CSV)'}
                                     </button>
                                     
                                     <div className="relative flex py-5 items-center">
                                         <div className="flex-grow border-t border-slate-700"></div>
-                                        <span className="flex-shrink-0 mx-4 text-slate-500 text-xs uppercase">Ou Importe Novos</span>
+                                        <span className="flex-shrink-0 mx-4 text-slate-500 text-xs uppercase font-bold">Ou Importe Novos</span>
                                         <div className="flex-grow border-t border-slate-700"></div>
                                     </div>
 
-                                    <label className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-lg cursor-pointer flex items-center justify-center gap-2 transition-all">
-                                        <FileText size={20} /> Importar .CSV
+                                    <label className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl cursor-pointer flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-900/20">
+                                        <FileText size={20} /> Selecionar Arquivo .CSV
                                         <input type="file" accept=".csv" className="hidden" onChange={handleFileRead} />
                                     </label>
-                                    <p className="text-xs text-slate-500 mt-2">Aceita formato separado por vírgula (,) ou ponto e vírgula (;).</p>
+                                    <p className="text-xs text-slate-500 mt-2">Aceita planilhas salvas como CSV (separado por vírgula ou ponto e vírgula).</p>
                                 </div>
                             )}
+
+                            {/* PASSO 2: MAPEAMENTO DAS COLUNAS */}
                             {step === 2 && (
                                 <div className="space-y-3 animate-fade-in">
-                                    <h3 className="font-bold text-white text-sm mb-4">Vincule as Colunas do seu Arquivo</h3>
+                                    <h3 className="font-bold text-white text-sm mb-4 border-l-4 border-orange-500 pl-3">Vincule as colunas do seu arquivo:</h3>
+                                    
                                     {[ 
-                                        {id: 'name', label: 'Nome do Cliente (Obrigatório)'}, 
-                                        {id: 'dueDate', label: 'Data Vencimento (Obrigatório)'},
-                                        {id: 'whatsapp', label: 'WhatsApp'},
-                                        {id: 'value', label: 'Valor Mensal'},
-                                        {id: 'username', label: 'Login/Usuário'},
+                                        {id: 'name', label: 'Nome do Cliente (Obrigatório)', req: true}, 
+                                        {id: 'dueDate', label: 'Data Vencimento (Obrigatório)', req: true},
+                                        {id: 'whatsapp', label: 'WhatsApp / Celular'},
+                                        {id: 'value', label: 'Valor Mensal (R$)'},
+                                        {id: 'username', label: 'Login / Usuário'},
                                         {id: 'observation', label: 'Observação'}
                                     ].map(field => (
-                                        <div key={field.id}>
-                                            <label className={`text-xs font-bold uppercase mb-1 block ${field.id === 'name' || field.id === 'dueDate' ? 'text-orange-500' : 'text-slate-500'}`}>{field.label}</label>
-                                            <select value={mapping[field.id]} onChange={(e) => setMapping({...mapping, [field.id]: e.target.value})} className="bg-slate-950 border border-slate-700 w-full p-2.5 rounded-lg text-white text-sm outline-none focus:border-orange-500">
-                                                <option value="">-- Ignorar --</option>
+                                        <div key={field.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                                            <label className={`text-[10px] font-bold uppercase mb-1 block ${field.req ? 'text-orange-500' : 'text-slate-500'}`}>{field.label}</label>
+                                            <select 
+                                                value={mapping[field.id]} 
+                                                onChange={(e) => setMapping({...mapping, [field.id]: e.target.value})} 
+                                                className="bg-slate-900 border border-slate-700 w-full p-2 rounded-lg text-white text-sm outline-none focus:border-orange-500 transition-colors"
+                                            >
+                                                <option value="">-- Ignorar esta coluna --</option>
                                                 {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                             </select>
                                         </div>
                                     ))}
+                                    
                                     <button onClick={processImport} disabled={isProcessing} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl mt-4 shadow-lg shadow-green-900/20">
                                         Confirmar Importação
                                     </button>
                                 </div>
                             )}
+
+                            {/* PASSO 3: CARREGANDO */}
                             {step === 3 && (
                                 <div className="text-center h-full flex flex-col justify-center items-center">
-                                    <div className="w-20 h-20 relative flex items-center justify-center">
-                                        <LoadingSpinner size={60} color="text-green-500" />
+                                    <div className="w-24 h-24 relative flex items-center justify-center">
+                                        <div className="absolute inset-0 border-4 border-green-500/20 rounded-full"></div>
+                                        <div className="absolute inset-0 border-4 border-green-500 rounded-full border-t-transparent animate-spin"></div>
+                                        <span className="font-bold text-white">{importProgress}%</span>
                                     </div>
-                                    <h3 className="text-xl font-bold text-white mt-6">Importando...</h3>
-                                    <p className="text-slate-400 text-sm mt-2">{importProgress}% concluído</p>
-                                    <div className="w-full bg-slate-800 rounded-full h-2.5 mt-4 overflow-hidden">
-                                        <div className="bg-green-500 h-2.5 rounded-full transition-all duration-300" style={{ width: `${importProgress}%` }}></div>
-                                    </div>
+                                    <h3 className="text-xl font-bold text-white mt-6">Importando Clientes...</h3>
+                                    <p className="text-slate-400 text-sm mt-2">Isso pode levar alguns segundos. Não feche.</p>
                                 </div>
                             )}
                         </div>
