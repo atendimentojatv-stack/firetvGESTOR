@@ -676,7 +676,8 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
             const [step, setStep] = useState(1);
             const [csvData, setCsvData] = useState([]);
             const [csvHeaders, setCsvHeaders] = useState([]);
-            const [mapping, setMapping] = useState({ name: '', whatsapp: '', dueDate: '', value: '', username: '', observation: '' });
+            // ADICIONADO: dueTime no estado inicial
+            const [mapping, setMapping] = useState({ name: '', whatsapp: '', dueDate: '', dueTime: '', value: '', username: '', observation: '' });
             const [importProgress, setImportProgress] = useState(0);
             const [isExporting, setIsExporting] = useState(false);
 
@@ -687,15 +688,30 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                 setIsExporting(true);
                 try {
                     // Cabeçalho do CSV
-                    const headers = ['Nome', 'WhatsApp', 'Vencimento (AAAA-MM-DD)', 'Valor', 'Login', 'Observação', 'Status'];
+                    const headers = ['Nome', 'WhatsApp', 'Vencimento (AAAA-MM-DD)', 'Hora', 'Valor', 'Login', 'Observação', 'Status'];
                     
                     // Dados formatados para CSV (Excel BR prefere ponto e vírgula)
                     const rows = clients.map(c => {
                         const safe = (txt) => `"${(txt || '').toString().replace(/"/g, '""')}"`;
+                        
+                        // Separa data e hora se possível
+                        let datePart = c.dueDate || '';
+                        let timePart = '00:00';
+                        if (datePart.includes('T')) {
+                            const parts = datePart.split('T');
+                            datePart = parts[0];
+                            timePart = parts[1].substring(0, 5);
+                        } else if (datePart.includes(' ')) {
+                             const parts = datePart.split(' ');
+                            datePart = parts[0];
+                            timePart = parts[1].substring(0, 5);
+                        }
+
                         return [
                             safe(c.name),
                             safe(c.whatsapp),
-                            safe(c.dueDate),
+                            safe(datePart),
+                            safe(timePart),
                             safe((c.value || 0).toString().replace('.', ',')), // Formato R$ (10,00)
                             safe(c.username),
                             safe(c.observation),
@@ -746,8 +762,8 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                     
                     // Processa as linhas
                     const data = lines.slice(1).map(line => {
-                        // Regex para separar mantendo texto entre aspas intacto (ex: "Silva, Joao")
-                        // Se não tiver aspas complexas, o split simples resolve a maioria
+                        // Regex para separar mantendo texto entre aspas intacto
+                        // Solução simples: split pelo delimitador
                         const values = line.split(delimiter).map(v => v.trim().replace(/"/g, ''));
                         let obj = {}; 
                         headers.forEach((h, i) => obj[h] = values[i] || ''); 
@@ -761,18 +777,33 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                 reader.readAsText(file, 'UTF-8');
             };
 
-            // --- 3. AUTO-MAPEAMENTO INTELIGENTE ---
+            // --- 3. AUTO-MAPEAMENTO INTELIGENTE (ATUALIZADO) ---
             const autoMapHeaders = (headers) => {
                 let newMapping = {};
                 headers.forEach(h => {
                     const lh = h.toLowerCase();
                     // Lógica para tentar adivinhar qual coluna é qual
-                    if (['nome', 'cliente', 'name', 'nom'].some(v => lh.includes(v)) && !newMapping.name) newMapping.name = h;
-                    if (['whatsapp', 'celular', 'phone', 'tel', 'zap'].some(v => lh.includes(v)) && !newMapping.whatsapp) newMapping.whatsapp = h;
-                    if (['vencimento', 'data', 'due', 'expire', 'validade'].some(v => lh.includes(v)) && !newMapping.dueDate) newMapping.dueDate = h;
-                    if (['valor', 'price', 'value', 'mensalidade', 'preço'].some(v => lh.includes(v)) && !newMapping.value) newMapping.value = h;
-                    if (['usuario', 'login', 'username', 'user'].some(v => lh.includes(v)) && !newMapping.username) newMapping.username = h;
-                    if (['obs', 'observacao', 'note'].some(v => lh.includes(v)) && !newMapping.observation) newMapping.observation = h;
+                    
+                    // NOME
+                    if (['nome', 'cliente', 'name', 'nom', 'full_name'].some(v => lh.includes(v)) && !newMapping.name) newMapping.name = h;
+                    
+                    // WHATSAPP
+                    if (['whatsapp', 'celular', 'phone', 'tel', 'zap', 'mobile'].some(v => lh.includes(v)) && !newMapping.whatsapp) newMapping.whatsapp = h;
+                    
+                    // DATA DE VENCIMENTO
+                    if (['vencimento', 'data', 'due', 'expire', 'validade', 'expiration'].some(v => lh.includes(v)) && !newMapping.dueDate) newMapping.dueDate = h;
+                    
+                    // HORA (NOVO)
+                    if (['hora', 'time', 'hour', 'h:m'].some(v => lh.includes(v)) && !newMapping.dueTime) newMapping.dueTime = h;
+
+                    // VALOR
+                    if (['valor', 'price', 'value', 'mensalidade', 'preço', 'custo'].some(v => lh.includes(v)) && !newMapping.value) newMapping.value = h;
+                    
+                    // LOGIN / USUÁRIO (ADICIONADO "NICK")
+                    if (['usuario', 'login', 'username', 'user', 'nick', 'nickname'].some(v => lh.includes(v)) && !newMapping.username) newMapping.username = h;
+                    
+                    // OBSERVAÇÃO
+                    if (['obs', 'observacao', 'note', 'info'].some(v => lh.includes(v)) && !newMapping.observation) newMapping.observation = h;
                 });
                 setMapping(newMapping);
             };
@@ -791,7 +822,10 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                 try {
                     for (const row of csvData) {
                         const rawDate = row[mapping.dueDate];
-                        const fmtDate = formatDateForImport(rawDate);
+                        const rawTime = mapping.dueTime ? row[mapping.dueTime] : null; // Pega a hora se mapeada
+                        
+                        // Passa a data E a hora para formatar
+                        const fmtDate = formatDateForImport(rawDate, rawTime);
                         
                         // Pula se não tiver data válida
                         if (!fmtDate) continue;
@@ -843,28 +877,49 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                 }
             };
 
-            // Função Auxiliar: Converte DD/MM/YYYY para YYYY-MM-DD
-            const formatDateForImport = (dateStr) => {
+            // Função Auxiliar: Converte DD/MM/YYYY + HH:MM para ISO String
+            const formatDateForImport = (dateStr, timeStr) => {
                 if (!dateStr) return null;
-                const cleanStr = dateStr.trim().split(' ')[0]; // Remove horas se houver
                 
-                // Se já estiver em YYYY-MM-DD
-                if (cleanStr.match(/^\d{4}-\d{2}-\d{2}$/)) return cleanStr;
+                let cleanDate = dateStr.trim();
+                let cleanTime = timeStr ? timeStr.trim() : '00:00';
 
-                // Se estiver em DD/MM/YYYY ou DD-MM-YYYY
-                if (cleanStr.includes('/') || cleanStr.includes('-')) {
-                    const separator = cleanStr.includes('/') ? '/' : '-';
-                    const parts = cleanStr.split(separator);
+                // Se a data já vier com hora (ex: "2023-10-25 14:30") e não tiver coluna de hora separada
+                if (cleanDate.includes(' ') && !timeStr) {
+                    const parts = cleanDate.split(' ');
+                    cleanDate = parts[0];
+                    cleanTime = parts[1];
+                }
+
+                // Normaliza a data para YYYY-MM-DD
+                let formattedDatePart = null;
+
+                // Caso 1: Já está em YYYY-MM-DD
+                if (cleanDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    formattedDatePart = cleanDate;
+                }
+                // Caso 2: Está em DD/MM/YYYY ou DD-MM-YYYY
+                else if (cleanDate.includes('/') || cleanDate.includes('-')) {
+                    const separator = cleanDate.includes('/') ? '/' : '-';
+                    const parts = cleanDate.split(separator);
                     if (parts.length === 3) {
-                        // Assume dia/mês/ano
                         const day = parts[0].padStart(2, '0');
                         const month = parts[1].padStart(2, '0');
-                        const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2]; // Trata ano '24' como '2024'
-                        return `${year}-${month}-${day}`;
+                        const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+                        formattedDatePart = `${year}-${month}-${day}`;
                     }
                 }
-                
-                return null; 
+
+                if (!formattedDatePart) return null;
+
+                // Tenta criar um ISO String completo se a hora for válida
+                try {
+                    // Garante formato HH:MM:SS ou HH:MM
+                    if (cleanTime.length === 5) cleanTime += ':00';
+                    return `${formattedDatePart}T${cleanTime}`; // Retorna formato ISO simples (Local Time implicitly) ou poderia ser Date object
+                } catch (e) {
+                    return formattedDatePart; // Retorna só a data se falhar a hora
+                }
             };
 
             return (
@@ -894,7 +949,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                                         <FileText size={20} /> Selecionar Arquivo .CSV
                                         <input type="file" accept=".csv" className="hidden" onChange={handleFileRead} />
                                     </label>
-                                    <p className="text-xs text-slate-500 mt-2">Aceita planilhas salvas como CSV (separado por vírgula ou ponto e vírgula).</p>
+                                    <p className="text-xs text-slate-500 mt-2">Aceita planilhas salvas como CSV (Excel).</p>
                                 </div>
                             )}
 
@@ -906,9 +961,10 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                                     {[ 
                                         {id: 'name', label: 'Nome do Cliente (Obrigatório)', req: true}, 
                                         {id: 'dueDate', label: 'Data Vencimento (Obrigatório)', req: true},
+                                        {id: 'dueTime', label: 'Hora Vencimento (Opcional)'}, // NOVO CAMPO
                                         {id: 'whatsapp', label: 'WhatsApp / Celular'},
                                         {id: 'value', label: 'Valor Mensal (R$)'},
-                                        {id: 'username', label: 'Login / Usuário'},
+                                        {id: 'username', label: 'Login / Nick / Usuário'}, // TEXTO ATUALIZADO
                                         {id: 'observation', label: 'Observação'}
                                     ].map(field => (
                                         <div key={field.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800">
@@ -918,7 +974,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                                                 onChange={(e) => setMapping({...mapping, [field.id]: e.target.value})} 
                                                 className="bg-slate-900 border border-slate-700 w-full p-2 rounded-lg text-white text-sm outline-none focus:border-orange-500 transition-colors"
                                             >
-                                                <option value="">-- Ignorar esta coluna --</option>
+                                                <option value="">-- Ignorar --</option>
                                                 {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                                             </select>
                                         </div>
@@ -939,7 +995,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                                         <span className="font-bold text-white">{importProgress}%</span>
                                     </div>
                                     <h3 className="text-xl font-bold text-white mt-6">Importando Clientes...</h3>
-                                    <p className="text-slate-400 text-sm mt-2">Isso pode levar alguns segundos. Não feche.</p>
+                                    <p className="text-slate-400 text-sm mt-2">Isso pode levar alguns segundos.</p>
                                 </div>
                             )}
                         </div>
