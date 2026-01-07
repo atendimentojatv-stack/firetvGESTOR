@@ -1244,32 +1244,46 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
 
             const handleLogout = async () => { try { await signOut(auth); localStorage.removeItem('firetv_user_session'); setUser(null); setView('landing'); window.location.reload(); } catch (e) { showToast("Erro ao sair: " + e.message, 'error'); } };
 
+// --- BLOCO DE CARREGAMENTO DE DADOS (CORRIGIDO) ---
             useEffect(() => {
                 if (!user || !user.id || view !== 'dashboard') return;
                 
-                // CORREÇÃO CRÍTICA PARA DATA FETCHING
+                // 1. Carrega Clientes (Criados por mim)
                 const qClients = query(getClientsCollection(), where('createdBy', '==', user.email));
                 const unsubClients = onSnapshot(qClients, 
                     (s) => setClients(s.docs.map(d => ({ id: d.id, ...d.data() }))),
                     (error) => { console.error("Erro Clientes:", error); } 
                 );
                 
+                // 2. Carrega Transações
                 const qTrans = query(getTransactionsCollection(), where('userId', '==', user.email));
                 const unsubTrans = onSnapshot(qTrans, 
                     (s) => setTransactions(s.docs.map(d => ({ id: d.id, ...d.data() }))),
                     (error) => { console.error("Erro Transações:", error); }
                 );
 
+                // 3. Carrega Equipe (CORREÇÃO TOTAL PARA CEO)
                 let unsubTeam = () => {};
+                
                 if (user.role === 'ceo') {
+                    // MODO CEO: Busca TODA a coleção de usuários sem restrições
                     const qTeam = query(getUsersCollection()); 
-                    unsubTeam = onSnapshot(qTeam, (s) => setTeam(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.status !== 'deleted' && u.email !== 'admin@firetv.com')));
+                    unsubTeam = onSnapshot(qTeam, (s) => {
+                        const allDocs = s.docs.map(d => ({ id: d.id, ...d.data() }));
+                        // Remove apenas o usuário 'admin' do sistema para evitar acidentes, mostra todo o resto (inclusive deletados ou banidos)
+                        const visibleTeam = allDocs.filter(u => u.email !== 'admin@firetv.com');
+                        setTeam(visibleTeam);
+                    });
                 } else {
+                    // MODO REVENDA/MASTER: Vê apenas quem eles criaram e que não foi deletado
                     const qTeam = query(getUsersCollection(), where('parentId', '==', user.email));
-                    unsubTeam = onSnapshot(qTeam, (s) => setTeam(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.status !== 'deleted')));
+                    unsubTeam = onSnapshot(qTeam, (s) => {
+                        setTeam(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.status !== 'deleted'));
+                    });
                 }
+
                 return () => { unsubClients(); unsubTeam(); unsubTrans(); };
-            }, [user, view]); // Dependência em 'user' garante que se user.email atualizar (ex: login manual), a query roda de novo.
+            }, [user, view]);
 
             const handleOpenMessageModal = useCallback((client, type = 'client') => { setMessageClient(client); setMessageEdit(generateWhatsAppMessage(client, user, type)); setIsMessageModalOpen(true); }, [user]);
             const sendBotMessageFromModal = useCallback(async () => {
@@ -1314,21 +1328,21 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                 } catch (e) { showToast(`Erro: ${e.message}`, 'error'); } finally { setIsProcessing(false); }
             };
 
-            // ATUALIZAÇÃO: Exclusão Profunda e Otimista
+// --- FUNÇÃO DE EXCLUSÃO (CORRIGIDA E OTIMIZADA) ---
             const handleDelete = (id, type) => {
                 const itemToDelete = type === 'user' ? team.find(t => t.id === id) : clients.find(c => c.id === id);
                 
                 setConfirmDialog({
                     isOpen: true,
-                    // Título e mensagem mais claros sobre a gravidade da ação
-                    title: type === 'user' ? `Excluir ${itemToDelete?.name}?` : 'Excluir Cliente?',
+                    title: type === 'user' ? `Excluir ${itemToDelete?.name || 'Revenda'}?` : 'Excluir Cliente?',
                     message: type === 'user' 
-                        ? 'Esta ação é <b>PERMANENTE</b>. Ela apagará o acesso da revenda e <b>TODOS</b> os seus clientes vinculados do sistema.' 
-                        : 'Tem certeza que deseja excluir este cliente permanentemente da raiz do sistema?',
+                        ? 'Esta ação é <b>IRREVERSÍVEL</b>. Ao excluir esta Revenda, você também apagará <b>TODOS</b> os clientes que pertencem a ela.' 
+                        : 'Tem certeza que deseja excluir este cliente permanentemente?',
                     onConfirm: async () => {
+                        setConfirmDialog({ isOpen: false }); // Fecha o modal imediatamente
                         setIsProcessing(true);
                         
-                        // ATUALIZAÇÃO OTIMISTA: Remove da tela IMEDIATAMENTE antes do servidor
+                        // Atualização Otimista (Remove da tela para parecer instantâneo)
                         if (type === 'user') {
                             setTeam(prev => prev.filter(u => u.id !== id));
                         } else {
@@ -1337,32 +1351,36 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
 
                         try {
                             if (type === 'user') {
-                                // 1. Excluir clientes vinculados (Cleanup)
+                                // EXCLUSÃO DE REVENDA E SEUS CLIENTES
                                 if (itemToDelete?.email) {
                                     const qClients = query(getClientsCollection(), where('createdBy', '==', itemToDelete.email));
                                     const snapshot = await getDocs(qClients);
                                     
-                                    // Usando batch para deletar clientes em lote
-                                    const batch = writeBatch(db);
-                                    snapshot.docs.forEach(doc => {
-                                        batch.delete(doc.ref);
-                                    });
-                                    if (!snapshot.empty) {
+                                    // Firestore suporta máx 500 operações por batch. Se tiver mais, deletamos um por um por segurança.
+                                    if (snapshot.size > 450) {
+                                         // Modo lento e seguro para muitos clientes
+                                         const deletePromises = snapshot.docs.map(d => deleteDoc(d.ref));
+                                         await Promise.all(deletePromises);
+                                    } else if (!snapshot.empty) {
+                                        // Modo rápido (Batch)
+                                        const batch = writeBatch(db);
+                                        snapshot.docs.forEach(d => batch.delete(d.ref));
                                         await batch.commit();
                                     }
                                 }
-                                // 2. Excluir o documento do Usuário (Revenda)
+                                // Deleta o usuário revenda em si
                                 await deleteDoc(doc(getUsersCollection(), id));
                             } else {
-                                // Excluir documento do Cliente
+                                // EXCLUSÃO DE CLIENTE ÚNICO
                                 await deleteDoc(doc(getClientsCollection(), id));
                             }
                             
-                            showToast('Registro excluído permanentemente!', 'success');
-                            setConfirmDialog({ isOpen: false });
+                            showToast('Registro deletado com sucesso!', 'success');
                         } catch(e) {
-                            showToast(`Erro ao excluir: ${e.message}`, 'error');
-                            // Se der erro, idealmente recarregaria os dados, mas o reload do useEffect cuida disso
+                            console.error(e);
+                            showToast(`Erro ao deletar: ${e.message}`, 'error');
+                            // Em caso de erro, recarrega a página para garantir consistência
+                            setTimeout(() => window.location.reload(), 2000);
                         } finally {
                             setIsProcessing(false);
                         }
