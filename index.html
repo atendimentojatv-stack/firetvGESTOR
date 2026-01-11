@@ -1097,6 +1097,21 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
             const [renewalClientData, setRenewalClientData] = useState(null);
 
 
+            // --- ESTADOS DE CAMPANHAS WHATSAPP ---
+            const [campaignGroups, setCampaignGroups] = useState([]);
+            const [campaignContacts, setCampaignContacts] = useState([]);
+            const [selectedGroupsForCampaign, setSelectedGroupsForCampaign] = useState([]);
+            const [selectedContactsForCampaign, setSelectedContactsForCampaign] = useState([]);
+            const [campaignMessage, setCampaignMessage] = useState('');
+            const [campaignDelay, setCampaignDelay] = useState(5);
+            const [campaignTiming, setCampaignTiming] = useState('immediate');
+            const [campaignScheduleTime, setCampaignScheduleTime] = useState('09:00');
+            const [isCampaignRunning, setIsCampaignRunning] = useState(false);
+            const [campaignProgress, setCampaignProgress] = useState({ sent: 0, total: 0, current: '' });
+            const [campaignHistory, setCampaignHistory] = useState([]);
+            const [campaignMode, setCampaignMode] = useState('groups'); // 'groups' ou 'contacts'
+            const [showCampaignModal, setShowCampaignModal] = useState(false);
+
             // --- ESTADOS DO FINANCEIRO ---
             // CORREÇÃO: Removida a atribuição de valor na desestruturação (setTransactions)
             const [transactions, setTransactions] = useState([]);
@@ -1209,6 +1224,111 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
             }, [transactions, financialFilterDate]);
 
             // --- FIM FUNÇÕES FINANCEIRAS ---
+
+            // --- FUNÇÕES DE CAMPANHAS WHATSAPP ---
+            const extractWhatsAppGroups = async () => {
+                try {
+                    setIsProcessing(true);
+                    // Simular extração de grupos do WhatsApp via Baileys
+                    const mockGroups = [
+                        { id: '1@g.us', name: 'Clientes IPTV', members: 45 },
+                        { id: '2@g.us', name: 'Suporte Técnico', members: 12 },
+                        { id: '3@g.us', name: 'Promoções', members: 89 }
+                    ];
+                    setCampaignGroups(mockGroups);
+                    showToast(`${mockGroups.length} grupos extraídos com sucesso!`, 'success');
+                } catch (e) {
+                    showToast(`Erro ao extrair grupos: ${e.message}`, 'error');
+                } finally {
+                    setIsProcessing(false);
+                }
+            };
+
+            const extractWhatsAppContacts = async () => {
+                try {
+                    setIsProcessing(true);
+                    // Simular extração de contatos do WhatsApp
+                    const mockContacts = [
+                        { id: '5511999999999@c.us', name: 'João Silva', phone: '11999999999' },
+                        { id: '5511988888888@c.us', name: 'Maria Santos', phone: '11988888888' },
+                        { id: '5511977777777@c.us', name: 'Pedro Oliveira', phone: '11977777777' }
+                    ];
+                    setCampaignContacts(mockContacts);
+                    showToast(`${mockContacts.length} contatos extraídos com sucesso!`, 'success');
+                } catch (e) {
+                    showToast(`Erro ao extrair contatos: ${e.message}`, 'error');
+                } finally {
+                    setIsProcessing(false);
+                }
+            };
+
+            const startCampaign = async () => {
+                if (!campaignMessage.trim()) {
+                    showToast('Digite uma mensagem antes de iniciar a campanha!', 'error');
+                    return;
+                }
+
+                const targets = campaignMode === 'groups' ? selectedGroupsForCampaign : selectedContactsForCampaign;
+                if (targets.length === 0) {
+                    showToast('Selecione pelo menos um alvo para a campanha!', 'error');
+                    return;
+                }
+
+                setIsCampaignRunning(true);
+                setCampaignProgress({ sent: 0, total: targets.length, current: '' });
+
+                try {
+                    for (let i = 0; i < targets.length; i++) {
+                        const target = targets[i];
+                        setCampaignProgress(prev => ({
+                            ...prev,
+                            sent: i + 1,
+                            current: target.name || target.phone
+                        }));
+
+                        // Simular envio com delay
+                        await new Promise(resolve => setTimeout(resolve, campaignDelay * 1000));
+                    }
+
+                    const campaign = {
+                        id: Date.now(),
+                        date: new Date().toLocaleString('pt-BR'),
+                        type: campaignMode,
+                        targetCount: targets.length,
+                        message: campaignMessage.substring(0, 50) + '...',
+                        status: 'completed'
+                    };
+
+                    setCampaignHistory(prev => [campaign, ...prev]);
+                    showToast(`Campanha concluída! ${targets.length} mensagens enviadas.`, 'success');
+                    setCampaignMessage('');
+                    setSelectedGroupsForCampaign([]);
+                    setSelectedContactsForCampaign([]);
+                } catch (e) {
+                    showToast(`Erro ao enviar campanha: ${e.message}`, 'error');
+                } finally {
+                    setIsCampaignRunning(false);
+                    setCampaignProgress({ sent: 0, total: 0, current: '' });
+                }
+            };
+
+            const toggleGroupSelection = (groupId) => {
+                setSelectedGroupsForCampaign(prev =>
+                    prev.includes(groupId)
+                        ? prev.filter(id => id !== groupId)
+                        : [...prev, groupId]
+                );
+            };
+
+            const toggleContactSelection = (contactId) => {
+                setSelectedContactsForCampaign(prev =>
+                    prev.includes(contactId)
+                        ? prev.filter(id => id !== contactId)
+                        : [...prev, contactId]
+                );
+            };
+
+            // --- FIM FUNÇÕES DE CAMPANHAS ---
 
             const addLog = (msg) => { const time = new Date().toLocaleTimeString(); setClientLog(prev => [`[${time}] ${msg}`, ...prev].slice(0, 50)); };
            const handleBotAction = async (action) => {
@@ -1843,6 +1963,247 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                                     </div>
                                 </div>
                             )}
+{/* ... código anterior da aba 'users' ... */}
+{activeTab === 'users' && (
+  <div className="p-4 md:p-8 space-y-6 animate-fade-in pb-32 md:pb-8">
+     {/* CONTEÚDO DA LISTA DE CLIENTES QUE VOCÊ JÁ TEM */}
+  </div>
+)}
+
+{/* >>> COLE AQUI O NOVO BLOCO <<< */}
+{activeTab === 'campaign' && (
+    <div className="p-6 animate-fade-in space-y-6 pb-32">
+        {/* HEADER */}
+        <div className="flex items-center gap-4 mb-6">
+            <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-2xl border border-emerald-500/20">
+                <Megaphone size={32} />
+            </div>
+            <div>
+                <h2 className="text-3xl font-black text-white uppercase">Campanhas WhatsApp</h2>
+                <p className="text-slate-400 font-medium">Envio automatizado de mensagens em massa com proteção anti-ban</p>
+            </div>
+        </div>
+
+        {/* SELETOR DE MODO */}
+        <div className="flex gap-3 mb-6">
+            <button
+                onClick={() => { setCampaignMode('groups'); setSelectedContactsForCampaign([]); }}
+                className={`px-6 py-3 rounded-xl font-bold transition-all ${
+                    campaignMode === 'groups'
+                        ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+            >
+                <Users size={18} className="inline mr-2" /> Grupos
+            </button>
+            <button
+                onClick={() => { setCampaignMode('contacts'); setSelectedGroupsForCampaign([]); }}
+                className={`px-6 py-3 rounded-xl font-bold transition-all ${
+                    campaignMode === 'contacts'
+                        ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/40'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+            >
+                <Smartphone size={18} className="inline mr-2" /> Contatos
+            </button>
+        </div>
+
+        {/* GRID PRINCIPAL */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* COLUNA ESQUERDA - MENSAGEM */}
+            <div className="lg:col-span-2 space-y-4">
+                {/* ÁREA DE MENSAGEM */}
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-2xl">
+                    <label className="text-xs font-bold text-emerald-500 uppercase tracking-[0.2em] block mb-3">Mensagem para Envio</label>
+                    <textarea
+                        value={campaignMessage}
+                        onChange={(e) => setCampaignMessage(e.target.value)}
+                        placeholder="Digite sua mensagem aqui..."
+                        className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-4 text-white h-48 focus:border-emerald-500 outline-none transition-all resize-none"
+                    />
+                    <div className="text-xs text-slate-500 mt-2">{campaignMessage.length} caracteres</div>
+                </div>
+
+                {/* LISTA DE SELEÇÃO */}
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
+                    <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-bold text-white flex items-center gap-2">
+                            {campaignMode === 'groups' ? <Users size={18} className="text-emerald-500" /> : <Smartphone size={18} className="text-emerald-500" />}
+                            {campaignMode === 'groups' ? 'Grupos Disponíveis' : 'Contatos Disponíveis'}
+                        </h4>
+                        <button
+                            onClick={campaignMode === 'groups' ? extractWhatsAppGroups : extractWhatsAppContacts}
+                            disabled={isProcessing}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold text-sm transition-all"
+                        >
+                            {isProcessing ? <Loader2 size={16} className="inline animate-spin" /> : <RefreshCw size={16} className="inline" />} Extrair
+                        </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {campaignMode === 'groups' ? (
+                            campaignGroups.length === 0 ? (
+                                <p className="text-slate-400 text-sm py-4 text-center">Clique em "Extrair" para listar seus grupos</p>
+                            ) : (
+                                campaignGroups.map(group => (
+                                    <label key={group.id} className="flex items-center gap-3 p-3 bg-slate-950 rounded-lg hover:bg-slate-800 cursor-pointer transition-all">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedGroupsForCampaign.includes(group.id)}
+                                            onChange={() => toggleGroupSelection(group.id)}
+                                            className="w-4 h-4 rounded accent-emerald-500"
+                                        />
+                                        <div className="flex-1">
+                                            <div className="font-bold text-white">{group.name}</div>
+                                            <div className="text-xs text-slate-400">{group.members} membros</div>
+                                        </div>
+                                    </label>
+                                ))
+                            )
+                        ) : (
+                            campaignContacts.length === 0 ? (
+                                <p className="text-slate-400 text-sm py-4 text-center">Clique em "Extrair" para listar seus contatos</p>
+                            ) : (
+                                campaignContacts.map(contact => (
+                                    <label key={contact.id} className="flex items-center gap-3 p-3 bg-slate-950 rounded-lg hover:bg-slate-800 cursor-pointer transition-all">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedContactsForCampaign.includes(contact.id)}
+                                            onChange={() => toggleContactSelection(contact.id)}
+                                            className="w-4 h-4 rounded accent-emerald-500"
+                                        />
+                                        <div className="flex-1">
+                                            <div className="font-bold text-white">{contact.name}</div>
+                                            <div className="text-xs text-slate-400">{contact.phone}</div>
+                                        </div>
+                                    </label>
+                                ))
+                            )
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* COLUNA DIREITA - CONTROLES */}
+            <div className="space-y-4">
+                {/* PAINEL DE CONTROLE */}
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl sticky top-6">
+                    <h4 className="font-bold text-white mb-6 flex items-center gap-2 uppercase text-sm tracking-widest">
+                        <Settings size={18} className="text-emerald-500"/> Configurações
+                    </h4>
+
+                    <div className="space-y-4">
+                        {/* DELAY */}
+                        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                            <label className="text-[10px] font-black text-emerald-500 uppercase tracking-tighter block mb-2">Delay entre envios (segundos)</label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="60"
+                                value={campaignDelay}
+                                onChange={(e) => setCampaignDelay(parseInt(e.target.value) || 5)}
+                                className="w-full bg-transparent text-xl font-bold text-emerald-500 outline-none"
+                            />
+                            <div className="text-xs text-slate-500 mt-2">Recomendado: 5-10 segundos para evitar ban</div>
+                        </div>
+
+                        {/* TIMING */}
+                        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                            <label className="text-[10px] font-black text-emerald-500 uppercase tracking-tighter block mb-2">Modo de Envio</label>
+                            <select
+                                value={campaignTiming}
+                                onChange={(e) => setCampaignTiming(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-white text-sm"
+                            >
+                                <option value="immediate">Imediato</option>
+                                <option value="scheduled">Agendado</option>
+                            </select>
+                        </div>
+
+                        {/* HORÁRIO (se agendado) */}
+                        {campaignTiming === 'scheduled' && (
+                            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                                <label className="text-[10px] font-black text-emerald-500 uppercase tracking-tighter block mb-2">Horário</label>
+                                <input
+                                    type="time"
+                                    value={campaignScheduleTime}
+                                    onChange={(e) => setCampaignScheduleTime(e.target.value)}
+                                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-white"
+                                />
+                            </div>
+                        )}
+
+                        {/* RESUMO */}
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl">
+                            <div className="text-xs font-bold text-emerald-500 uppercase mb-2">Resumo</div>
+                            <div className="text-sm text-white space-y-1">
+                                <div>Alvo: <span className="font-bold text-emerald-400">{campaignMode === 'groups' ? selectedGroupsForCampaign.length : selectedContactsForCampaign.length}</span></div>
+                                <div>Delay: <span className="font-bold text-emerald-400">{campaignDelay}s</span></div>
+                                <div>Tempo: <span className="font-bold text-emerald-400">{campaignMode === 'groups' ? selectedGroupsForCampaign.length * campaignDelay : selectedContactsForCampaign.length * campaignDelay}s</span></div>
+                            </div>
+                        </div>
+
+                        {/* BOTÃO DISPARAR */}
+                        <button
+                            onClick={startCampaign}
+                            disabled={isCampaignRunning || campaignMessage.length === 0 || (campaignMode === 'groups' ? selectedGroupsForCampaign.length === 0 : selectedContactsForCampaign.length === 0)}
+                            className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-black py-5 rounded-2xl transition-all shadow-lg shadow-emerald-900/40 flex items-center justify-center gap-3 group"
+                        >
+                            {isCampaignRunning ? (
+                                <>
+                                    <Loader2 size={22} className="animate-spin" />
+                                    Enviando...
+                                </>
+                            ) : (
+                                <>
+                                    <Send size={22} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                                    DISPARAR AGORA
+                                </>
+                            )}
+                        </button>
+
+                        {/* BARRA DE PROGRESSO */}
+                        {isCampaignRunning && (
+                            <div className="bg-slate-950 p-4 rounded-2xl border border-emerald-500/30">
+                                <div className="text-xs font-bold text-emerald-500 mb-2">Progresso: {campaignProgress.sent}/{campaignProgress.total}</div>
+                                <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                                    <div
+                                        className="bg-emerald-500 h-full transition-all duration-300"
+                                        style={{ width: `${(campaignProgress.sent / campaignProgress.total) * 100}%` }}
+                                    />
+                                </div>
+                                <div className="text-xs text-slate-400 mt-2">Enviando para: {campaignProgress.current}</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {/* HISTÓRICO */}
+        {campaignHistory.length > 0 && (
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl">
+                <h4 className="font-bold text-white mb-4 flex items-center gap-2 uppercase text-sm tracking-widest">
+                    <BarChart size={18} className="text-emerald-500"/> Histórico de Campanhas
+                </h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {campaignHistory.map(campaign => (
+                        <div key={campaign.id} className="bg-slate-950 p-3 rounded-lg flex items-center justify-between">
+                            <div>
+                                <div className="text-sm font-bold text-white">{campaign.message}</div>
+                                <div className="text-xs text-slate-400">{campaign.date}</div>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-sm font-bold text-emerald-500">{campaign.targetCount} enviadas</div>
+                                <div className="text-xs text-slate-400">{campaign.type === 'groups' ? 'Grupos' : 'Contatos'}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+    </div>
+)}
 
                             {activeTab === 'financial' && (
                                 <div className="space-y-6 animate-fade-in">
@@ -2083,6 +2444,17 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                                                 <button onClick={()=>setSettingsView('bot')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-green-500 text-left">
                                                     <QrCode className="text-green-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">Bot WhatsApp</h3><p className="text-sm text-slate-400">Conectar.</p>
                                                 </button>
+{/* OPÇÃO 5: CAMPANHA EM GRUPO */}
+<button
+  onClick={() => setActiveTab('campaign')}
+  className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-pink-500 text-left"
+>
+  <Megaphone className="text-pink-500 mb-4" size={32}/>
+  <h3 className="font-bold text-lg text-white">Campanha em Grupo</h3>
+  <p className="text-sm text-slate-400">
+    Disparo em massa para grupos.
+  </p>
+</button>
                                                 {/* OPÇÃO 2: IA - ASSISTENTE (NOVA POSIÇÃO) */}
                                                 <button onClick={()=>setSettingsView('ai-assistant')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-purple-500 text-left">
                                                     <Sparkles className="text-purple-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">IA - Assistente</h3><p className="text-sm text-slate-400">Geração de conteúdo e suporte.</p>
