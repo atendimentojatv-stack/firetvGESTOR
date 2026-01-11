@@ -77,7 +77,8 @@
 
 <script>
 async function reiniciarBot() {
-    const userId = "ID_DO_USUARIO_AQUI"; // Pegue o ID dinamicamente se necessário
+    const userId = auth.currentUser.uid; // Pegue o ID dinamicamente se necessário
+    loadGroups(userId);
     const confirmacao = confirm("Isso vai apagar a sessão atual e gerar um novo QR. Continuar?");
     
     if (confirmacao) {
