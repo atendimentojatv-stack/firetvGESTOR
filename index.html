@@ -77,7 +77,9 @@
 
 <script>
 async function reiniciarBot() {
-    const userId = auth.currentUser.uid; // Pegue o ID dinamicamente se necessário
+    // Altere para o ID correto que o seu bot está usando no servidor:
+const botId = "sTgcgohJlPcGKhygCGNe"; 
+fetch(`https://www.firegestor.top/api/groups/${botId}`)
     loadGroups(userId);
     const confirmacao = confirm("Isso vai apagar a sessão atual e gerar um novo QR. Continuar?");
     
