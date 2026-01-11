@@ -1014,7 +1014,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
 
 
 
-// --- TELA DE CAMPANHA (VERSÃO BLINDADA CONTRA ERRO DE HTTPS) ---
+// --- TELA DE CAMPANHA (CORRIGIDA) ---
     const CampaignView = ({ user }) => {
         const [groups, setGroups] = useState([]);
         const [selectedGroup, setSelectedGroup] = useState('');
@@ -1024,10 +1024,12 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
         const [loading, setLoading] = useState(false);
         const [statusLog, setStatusLog] = useState('');
 
-        // Tenta detectar o problema de HTTPS vs HTTP
+        // --- LINHA QUE FALTAVA (SEM ELA DÁ TELA BRANCA) ---
         const isHttps = window.location.protocol === 'https:';
-        const hostname = window.location.hostname;
-        const BOT_URL = `http://${hostname}:3000`; // Bot é sempre HTTP
+
+        // --- CORREÇÃO DEFINITIVA (USANDO PROXY) ---
+        // Deixe vazio. O Nginx vai redirecionar automaticamente.
+        const BOT_URL = '';
 
         const loadGroups = async () => {
             if(!user) return;
@@ -1045,11 +1047,11 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                 }
             } catch(e) { 
                 console.error(e);
-                // AQUI ESTÁ A MENSAGEM INTELIGENTE PARA VOCÊ
                 if (isHttps) {
-                    setStatusLog(`⚠️ BLOQUEIO DE SEGURANÇA DETECTADO! \nSeu site está em HTTPS mas o bot é HTTP. \nClique no cadeado 🔒 lá em cima > Configurações do Site > Conteúdo Inseguro > PERMITIR.`);
+                    // Agora essa mensagem só aparece se o Nginx falhar
+                    setStatusLog(`⚠️ Erro de Conexão. Se você já configurou o Nginx, verifique se reiniciou ele.`);
                 } else {
-                    setStatusLog(`❌ Não conectou em ${BOT_URL}. Verifique se o Bot está ligado (pm2 list).`); 
+                    setStatusLog(`❌ Não conectou. Verifique se o Bot está ligado.`); 
                 }
             }
             setLoading(false);
@@ -1086,13 +1088,6 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                     </h2>
                     <p className="text-pink-100 text-sm">Disparo em massa para membros.</p>
                 </div>
-
-                {/* AVISO VISUAL SE ESTIVER EM HTTPS */}
-                {isHttps && (
-                    <div className="bg-yellow-900/50 border border-yellow-600 text-yellow-200 p-3 rounded-lg text-xs">
-                        ⚠️ Você está usando HTTPS. Se o botão falhar, você precisa liberar "Conteúdo Inseguro" no cadeado do navegador.
-                    </div>
-                )}
 
                 <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
                     <button onClick={loadGroups} disabled={loading} className="w-full bg-slate-700 text-white py-3 rounded-lg mb-4 hover:bg-slate-600 flex justify-center items-center gap-2">
