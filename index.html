@@ -1031,31 +1031,44 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
         // Deixe vazio. O Nginx vai redirecionar automaticamente.
         const BOT_URL = '';
 
-        const loadGroups = async () => {
-            if(!user) return;
-            setLoading(true);
-            try {
-                const res = await fetch(`${BOT_URL}/api/groups/${user.uid}`);
-                if (!res.ok) throw new Error('Falha na conexão');
-                const data = await res.json();
-                
-                if(data.success) {
-                    setGroups(data.groups);
-                    setStatusLog(`✅ ${data.groups.length} grupos carregados.`);
-                } else {
-                    setStatusLog(`❌ Erro do Bot: ${data.error}`);
-                }
-            } catch(e) { 
-                console.error(e);
-                if (isHttps) {
-                    // Agora essa mensagem só aparece se o Nginx falhar
-                    setStatusLog(`⚠️ Erro de Conexão. Se você já configurou o Nginx, verifique se reiniciou ele.`);
-                } else {
-                    setStatusLog(`❌ Não conectou. Verifique se o Bot está ligado.`); 
-                }
-            }
-            setLoading(false);
-        };
+const loadGroups = async () => {
+    // 1. Tenta pegar o ID da variável, se não tiver, tenta pegar direto do Firebase
+    const currentUser = user || (window.firebase && firebase.auth().currentUser);
+    const uid = currentUser ? currentUser.uid : null;
+
+    if (!uid) {
+        alert("Ops! Seu login ainda não foi identificado. Aguarde um segundo e tente novamente.");
+        console.error("UID está undefined. Verifique se o usuário está logado.");
+        return;
+    }
+
+    setLoading(true);
+    setStatusLog("📡 Conectando ao Bot...");
+
+    try {
+        // ✅ Agora a URL terá o ID correto em vez de 'undefined'
+        const res = await fetch(`${BOT_URL}/api/groups/${uid}`);
+        
+        if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.error || 'Erro na comunicação');
+        }
+
+        const data = await res.json();
+        
+        if (data.success) {
+            setGroups(data.groups);
+            setStatusLog(`✅ ${data.groups.length} grupos carregados.`);
+        } else {
+            setStatusLog(`❌ Erro: ${data.error}`);
+        }
+    } catch (e) {
+        console.error(e);
+        // Se cair aqui, ele mostra a mensagem de "Aguarde 10 segundos" do bot
+        setStatusLog(`⚠️ ${e.message}`);
+    }
+    setLoading(false);
+};
 
         const startCampaign = async () => {
             if(!selectedGroup || !message) return alert("Preencha tudo!");
