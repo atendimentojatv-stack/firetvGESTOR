@@ -69,6 +69,29 @@
         }
       }
     }
+<div id="bot-control">
+    <button onclick="reiniciarBot()" style="background: #e74c3c; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+        🔄 Não conectou? Gerar novo QR Code
+    </button>
+</div>
+
+<script>
+async function reiniciarBot() {
+    const userId = "ID_DO_USUARIO_AQUI"; // Pegue o ID dinamicamente se necessário
+    const confirmacao = confirm("Isso vai apagar a sessão atual e gerar um novo QR. Continuar?");
+    
+    if (confirmacao) {
+        try {
+            // Chama a rota de reset que criamos no index.js
+            const response = await fetch(`/api/reset/${userId}`);
+            const data = await response.json();
+            alert("Reiniciando... Aguarde 10 segundos e atualize a página.");
+            location.reload();
+        } catch (error) {
+            alert("Erro ao comunicar com o servidor.");
+        }
+    }
+}
   </script>
 
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -1013,6 +1036,109 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
         ];
 
 
+
+// --- COMPONENTE DE CAMPANHA EM GRUPO ---
+    const CampaignView = ({ user }) => {
+        const [groups, setGroups] = useState([]);
+        const [selectedGroup, setSelectedGroup] = useState('');
+        const [message, setMessage] = useState('');
+        const [minDelay, setMinDelay] = useState(20);
+        const [maxDelay, setMaxDelay] = useState(60);
+        const [loading, setLoading] = useState(false);
+        const [statusLog, setStatusLog] = useState('');
+
+        const loadGroups = async () => {
+            if(!user) return;
+            setLoading(true);
+            try {
+                // Tenta buscar os grupos
+                const res = await fetch(`/api/groups/${user.uid}`);
+                const data = await res.json();
+                if(data.success) {
+                    setGroups(data.groups);
+                    setStatusLog(`✅ ${data.groups.length} grupos encontrados.`);
+                } else {
+                    setStatusLog(`❌ Erro ao buscar: ${data.error}`);
+                }
+            } catch(e) { setStatusLog("❌ Erro de conexão com o Bot."); }
+            setLoading(false);
+        };
+
+        const startCampaign = async () => {
+            if(!selectedGroup || !message) return alert("Preencha o grupo e a mensagem!");
+            if(!confirm("⚠️ ATENÇÃO: Deseja iniciar os disparos para este grupo?")) return;
+            
+            setLoading(true);
+            setStatusLog("🚀 Iniciando campanha em segundo plano...");
+            
+            try {
+                const res = await fetch('/api/broadcast-group', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        userId: user.uid, 
+                        groupId: selectedGroup, 
+                        message,
+                        minDelay: Number(minDelay), 
+                        maxDelay: Number(maxDelay)
+                    })
+                });
+                const data = await res.json();
+                if(data.success) setStatusLog("✅ Campanha iniciada com sucesso!");
+                else setStatusLog(`❌ Erro: ${data.error}`);
+            } catch(e) { setStatusLog(`❌ Erro técnico: ${e.message}`); }
+            setLoading(false);
+        };
+
+        return (
+            <div className="space-y-6 pb-20 animate-fade-in">
+                <div className="bg-gradient-to-r from-pink-600 to-purple-600 p-6 rounded-2xl shadow-lg">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                        <Megaphone className="text-white"/> Campanha em Grupo
+                    </h2>
+                    <p className="text-pink-100 text-sm">Envie mensagens individuais para membros de um grupo.</p>
+                </div>
+
+                <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+                    <h3 className="text-pink-400 font-bold mb-4">1. Configuração</h3>
+                    
+                    <button onClick={loadGroups} disabled={loading} className="mb-4 flex items-center gap-2 bg-slate-700 px-4 py-3 rounded-lg text-white font-bold hover:bg-slate-600 w-full justify-center md:w-auto">
+                        {loading ? <Loader2 className="animate-spin" size={18}/> : <RefreshCw size={18}/>} 
+                        Carregar Meus Grupos
+                    </button>
+
+                    {groups.length > 0 && (
+                        <select className="w-full bg-slate-900 text-white p-3 rounded-lg border border-slate-600 mb-4 outline-none focus:border-pink-500" value={selectedGroup} onChange={e=>setSelectedGroup(e.target.value)}>
+                            <option value="">-- Selecione o Grupo --</option>
+                            {groups.map(g => <option key={g.id} value={g.id}>{g.name} ({g.participants} membros)</option>)}
+                        </select>
+                    )}
+
+                    <h3 className="text-pink-400 font-bold mb-2 mt-6">2. Mensagem</h3>
+                    <textarea className="w-full h-32 bg-slate-900 text-white p-3 rounded-lg border border-slate-600 mb-4 outline-none focus:border-pink-500" placeholder="Digite sua oferta aqui..." value={message} onChange={e=>setMessage(e.target.value)}></textarea>
+
+                    <h3 className="text-red-400 font-bold mb-2 mt-4 flex items-center gap-2"><Shield size={16}/> Segurança (Delay em Segundos)</h3>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label className="text-slate-400 text-xs block mb-1">Mínimo</label>
+                            <input type="number" className="w-full bg-slate-900 text-white p-2 rounded border border-slate-600" value={minDelay} onChange={e=>setMinDelay(e.target.value)}/>
+                        </div>
+                        <div>
+                            <label className="text-slate-400 text-xs block mb-1">Máximo</label>
+                            <input type="number" className="w-full bg-slate-900 text-white p-2 rounded border border-slate-600" value={maxDelay} onChange={e=>setMaxDelay(e.target.value)}/>
+                        </div>
+                    </div>
+
+                    {statusLog && <div className={`p-3 rounded text-center text-sm font-bold mb-4 ${statusLog.includes('❌') ? 'bg-red-900/50 text-red-200' : 'bg-green-900/50 text-green-200'}`}>{statusLog}</div>}
+
+                    <button onClick={startCampaign} disabled={loading || !selectedGroup} className="w-full bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white py-4 rounded-xl font-bold flex justify-center items-center gap-2 shadow-lg transition-all">
+                        {loading ? <Loader2 className="animate-spin"/> : <Send/>} INICIAR CAMPANHA
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
         const FireTVManager = () => {
             const [user, setUser] = useState(null);
             const [view, setView] = useState('landing');
@@ -1804,6 +1930,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                                     <div><h1 className="text-2xl md:text-3xl font-bold text-white">{activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'clients' ? 'Meus Clientes' : activeTab === 'financial' ? 'Controle Financeiro' : 'Gestão de Equipe'}</h1></div>
                                     <div className="flex items-center gap-2">
                                         {activeTab === 'clients' && <button onClick={() => setIsImportModalOpen(true)} className="bg-slate-800 px-4 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm"><FileText size={18} />  Exportar / Importar</button>}
+                                        {activeTab === 'campaign' && <CampaignView user={user} />}
                                         {/* BOTÃO PARA FINANCEIRO */}
                                         {activeTab === 'financial' && <button onClick={() => { setIsTransactionModalOpen(true); setEditingItem(null); setTransactionFormData({ description: '', amount: '', type: 'income', date: new Date().toISOString().split('T')[0], category: 'Mensalidade' }); }} className="bg-green-600 px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm hover:bg-green-500"><Plus size={20} /> Nova Transação</button>}
                                         {canAdd && activeTab !== 'financial' && <button onClick={() => { setModalType(activeTab === 'clients' ? 'client' : 'user'); setIsAddModalOpen(true); }} className="bg-orange-600 px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm"><Plus size={20} /> Novo</button>}
@@ -2079,6 +2206,17 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                                         <div className="space-y-6">
                                             <h2 className="text-xl md:text-2xl font-bold text-white mb-6">Configurações</h2>
                                             <div className="grid md:grid-cols-3 gap-4">
+{/* OPÇÃO 5: CAMPANHA EM GRUPO */}
+<button
+  onClick={() => setActiveTab('campaign')}
+  className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-pink-500 text-left"
+>
+  <Megaphone className="text-pink-500 mb-4" size={32}/>
+  <h3 className="font-bold text-lg text-white">Campanha em Grupo</h3>
+  <p className="text-sm text-slate-400">
+    Disparo em massa para grupos.
+  </p>
+</button>
                                                 {/* OPÇÃO 1: BOT WHATSAPP */}
                                                 <button onClick={()=>setSettingsView('bot')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-green-500 text-left">
                                                     <QrCode className="text-green-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">Bot WhatsApp</h3><p className="text-sm text-slate-400">Conectar.</p>
@@ -2429,6 +2567,8 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
 
         const root = createRoot(document.getElementById('root'));
         root.render(<ErrorBoundary><FireTVManager /></ErrorBoundary>);
+
+
     </script>
 </body>
 
