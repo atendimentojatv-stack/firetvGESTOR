@@ -1014,7 +1014,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
 
 
 
-// --- TELA DE CAMPANHA EM GRUPO (CORREÇÃO DE IP AUTOMÁTICO) ---
+// --- TELA DE CAMPANHA EM GRUPO (FORÇANDO HTTP) ---
     const CampaignView = ({ user }) => {
         const [groups, setGroups] = useState([]);
         const [selectedGroup, setSelectedGroup] = useState('');
@@ -1024,33 +1024,29 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
         const [loading, setLoading] = useState(false);
         const [statusLog, setStatusLog] = useState('');
 
-        // --- CORREÇÃO AQUI: DETECTA O IP AUTOMATICAMENTE ---
-       // --- DETECÇÃO AUTOMÁTICA DE IP ---
-        // Se você acessar pelo IP 144.22..., ele busca o bot no 144.22...
-        // Se acessar por localhost, ele busca em localhost.
-        const protocol = window.location.protocol.includes('http') ? window.location.protocol : 'http:';
+        // --- CORREÇÃO: FORÇANDO HTTP ---
+        // Pega o domínio (firegestor.top) mas FORÇA usar http://
         const hostname = window.location.hostname || 'localhost';
-        const BOT_URL = `${protocol}//${hostname}:3000`;
+        const BOT_URL = `http://${hostname}:3000`;
 
         const loadGroups = async () => {
             if(!user) return;
             setLoading(true);
             try {
-                // Tenta buscar grupos
                 const res = await fetch(`${BOT_URL}/api/groups/${user.uid}`);
                 
-                if (!res.ok) throw new Error('Falha ao conectar no Bot');
+                if (!res.ok) throw new Error('Falha na conexão');
                 
                 const data = await res.json();
                 if(data.success) {
                     setGroups(data.groups);
-                    setStatusLog(`✅ ${data.groups.length} grupos encontrados.`);
+                    setStatusLog(`✅ ${data.groups.length} grupos carregados.`);
                 } else {
                     setStatusLog(`❌ Erro do Bot: ${data.error}`);
                 }
             } catch(e) { 
                 console.error(e);
-                setStatusLog(`❌ Erro de conexão com ${BOT_URL}. O Bot está rodando?`); 
+                setStatusLog(`❌ Não conectou em ${BOT_URL}. Verifique se acessou o painel por HTTP (sem S).`); 
             }
             setLoading(false);
         };
@@ -1060,7 +1056,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
             if(!confirm("⚠️ Iniciar disparos?")) return;
             
             setLoading(true);
-            setStatusLog("🚀 Iniciando...");
+            setStatusLog("🚀 Enviando comando...");
             
             try {
                 const res = await fetch(`${BOT_URL}/api/broadcast-group`, {
@@ -1072,7 +1068,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                     })
                 });
                 const data = await res.json();
-                if(data.success) setStatusLog("✅ Campanha enviada para o Bot!");
+                if(data.success) setStatusLog("✅ Campanha iniciada com sucesso!");
                 else setStatusLog(`❌ Erro: ${data.error}`);
             } catch(e) { setStatusLog(`❌ Erro: ${e.message}`); }
             setLoading(false);
@@ -1115,7 +1111,6 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
             </div>
         );
     };
-
         const FireTVManager = () => {
             const [user, setUser] = useState(null);
             const [view, setView] = useState('landing');
