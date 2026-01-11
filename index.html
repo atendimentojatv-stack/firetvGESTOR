@@ -181,22 +181,21 @@
             }
         }
 
-        // --- CONFIGURAÇÃO API ---
-        const defaultApiKey = "AIzaSyCmbxg1nkPP2L_JRSsNN9uesayciKQV70"; 
-        
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-            apiKey: "AIzaSyClcK67ZPEC-4uky5y6RIYCyKF4BqO3xcE",
-            authDomain: "firetv-gestor.firebaseapp.com",
-            projectId: "firetv-gestor",
-            storageBucket: "firetv-gestor.firebasestorage.app",
-            messagingSenderId: "345143716576",
-            appId: "1:345143716576:web:bc9837700de2dc21a8fe85"
-        };
+    // Configuração Firebase (mantida igual ao original)
+    const defaultApiKey = "AIzaSyCmbxg1nkPP2L_JRSsNN9uesayciKQV70"; 
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+        apiKey: "AIzaSyClcK67ZPEC-4uky5y6RIYCyKF4BqO3xcE",
+        authDomain: "firetv-gestor.firebaseapp.com",
+        projectId: "firetv-gestor",
+        storageBucket: "firetv-gestor.firebasestorage.app",
+        messagingSenderId: "345143716576",
+        appId: "1:345143716576:web:bc9837700de2dc21a8fe85"
+    };
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'firetv-production';
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'firetv-production';
         
         const getUsersCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'users');
         const getClientsCollection = () => collection(db, 'artifacts', appId, 'public', 'data', 'clients');
@@ -1225,93 +1224,148 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
 
             // --- FIM FUNÇÕES FINANCEIRAS ---
 
-            // --- FUNÇÕES DE CAMPANHAS WHATSAPP ---
-            const extractWhatsAppGroups = async () => {
+    // ===== FUNÇÕES DE CAMPANHA CORRIGIDAS =====
+    
+    // CORREÇÃO 1: Extrair grupos reais do WhatsApp via backend
+    const extractWhatsAppGroups = async (userId) => {
+        try {
+            setIsProcessing(true);
+            
+            // Busca grupos do backend Node.js
+            const response = await fetch(`/api/whatsapp/groups/${userId}`);
+            if (!response.ok) throw new Error('Falha ao buscar grupos');
+            
+            const data = await response.json();
+            setCampaignGroups(data.groups || []);
+            showToast(`${data.groups?.length || 0} grupos extraídos!`, 'success');
+        } catch (e) {
+            showToast(`Erro: ${e.message}. Certifique-se de que o bot está conectado.`, 'error');
+            setCampaignGroups([]);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    // CORREÇÃO 2: Extrair contatos reais
+    const extractWhatsAppContacts = async (userId) => {
+        try {
+            setIsProcessing(true);
+            
+            const response = await fetch(`/api/whatsapp/contacts/${userId}`);
+            if (!response.ok) throw new Error('Falha ao buscar contatos');
+            
+            const data = await response.json();
+            setCampaignContacts(data.contacts || []);
+            showToast(`${data.contacts?.length || 0} contatos extraídos!`, 'success');
+        } catch (e) {
+            showToast(`Erro: ${e.message}`, 'error');
+            setCampaignContacts([]);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    // CORREÇÃO 3: Envio REAL de campanha via Firebase (igual ao sistema de clientes)
+    const startCampaign = async () => {
+        if (!campaignMessage.trim()) {
+            showToast('Digite uma mensagem antes de iniciar!', 'error');
+            return;
+        }
+
+        const targets = campaignMode === 'groups' ? selectedGroupsForCampaign : selectedContactsForCampaign;
+        if (targets.length === 0) {
+            showToast('Selecione pelo menos um alvo!', 'error');
+            return;
+        }
+
+        // Verifica se o bot está conectado
+        if (botSession?.status !== 'connected') {
+            showToast('Bot WhatsApp não está conectado! Conecte primeiro em Configurações > Bot WhatsApp', 'error');
+            return;
+        }
+
+        setIsCampaignRunning(true);
+        setCampaignProgress({ sent: 0, total: targets.length, current: '' });
+
+        try {
+            let successCount = 0;
+            
+            for (let i = 0; i < targets.length; i++) {
+                const target = targets[i];
+                const targetName = target.name || target.phone || 'Desconhecido';
+                
+                setCampaignProgress(prev => ({
+                    ...prev,
+                    sent: i + 1,
+                    current: targetName
+                }));
+
                 try {
-                    setIsProcessing(true);
-                    // Simular extração de grupos do WhatsApp via Baileys
-                    const mockGroups = [
-                        { id: '1@g.us', name: 'Clientes IPTV', members: 45 },
-                        { id: '2@g.us', name: 'Suporte Técnico', members: 12 },
-                        { id: '3@g.us', name: 'Promoções', members: 89 }
-                    ];
-                    setCampaignGroups(mockGroups);
-                    showToast(`${mockGroups.length} grupos extraídos com sucesso!`, 'success');
-                } catch (e) {
-                    showToast(`Erro ao extrair grupos: ${e.message}`, 'error');
-                } finally {
-                    setIsProcessing(false);
-                }
-            };
-
-            const extractWhatsAppContacts = async () => {
-                try {
-                    setIsProcessing(true);
-                    // Simular extração de contatos do WhatsApp
-                    const mockContacts = [
-                        { id: '5511999999999@c.us', name: 'João Silva', phone: '11999999999' },
-                        { id: '5511988888888@c.us', name: 'Maria Santos', phone: '11988888888' },
-                        { id: '5511977777777@c.us', name: 'Pedro Oliveira', phone: '11977777777' }
-                    ];
-                    setCampaignContacts(mockContacts);
-                    showToast(`${mockContacts.length} contatos extraídos com sucesso!`, 'success');
-                } catch (e) {
-                    showToast(`Erro ao extrair contatos: ${e.message}`, 'error');
-                } finally {
-                    setIsProcessing(false);
-                }
-            };
-
-            const startCampaign = async () => {
-                if (!campaignMessage.trim()) {
-                    showToast('Digite uma mensagem antes de iniciar a campanha!', 'error');
-                    return;
-                }
-
-                const targets = campaignMode === 'groups' ? selectedGroupsForCampaign : selectedContactsForCampaign;
-                if (targets.length === 0) {
-                    showToast('Selecione pelo menos um alvo para a campanha!', 'error');
-                    return;
-                }
-
-                setIsCampaignRunning(true);
-                setCampaignProgress({ sent: 0, total: targets.length, current: '' });
-
-                try {
-                    for (let i = 0; i < targets.length; i++) {
-                        const target = targets[i];
-                        setCampaignProgress(prev => ({
-                            ...prev,
-                            sent: i + 1,
-                            current: target.name || target.phone
-                        }));
-
-                        // Simular envio com delay
-                        await new Promise(resolve => setTimeout(resolve, campaignDelay * 1000));
+                    // ENVIO REAL via Firebase (mesma lógica do sendBotMessageFromModal)
+                    let phoneNumber = '';
+                    
+                    if (campaignMode === 'groups') {
+                        // Para grupos, usa o ID do grupo diretamente
+                        phoneNumber = target.id; // Ex: "123456789@g.us"
+                    } else {
+                        // Para contatos, formata o número
+                        phoneNumber = target.phone.replace(/\D/g, '');
+                        if (!phoneNumber.startsWith('55')) phoneNumber = '55' + phoneNumber;
+                        phoneNumber = phoneNumber + '@s.whatsapp.net';
                     }
 
-                    const campaign = {
-                        id: Date.now(),
-                        date: new Date().toLocaleString('pt-BR'),
-                        type: campaignMode,
-                        targetCount: targets.length,
-                        message: campaignMessage.substring(0, 50) + '...',
-                        status: 'completed'
-                    };
+                    // Adiciona mensagem na fila do bot (FIREBASE)
+                    await addDoc(
+                        collection(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'public', 'bot_messages'),
+                        {
+                            to: phoneNumber,
+                            body: campaignMessage,
+                            status: 'pending',
+                            createdAt: serverTimestamp(),
+                            campaignId: Date.now(), // Identificador da campanha
+                            targetName: targetName
+                        }
+                    );
 
-                    setCampaignHistory(prev => [campaign, ...prev]);
-                    showToast(`Campanha concluída! ${targets.length} mensagens enviadas.`, 'success');
-                    setCampaignMessage('');
-                    setSelectedGroupsForCampaign([]);
-                    setSelectedContactsForCampaign([]);
-                } catch (e) {
-                    showToast(`Erro ao enviar campanha: ${e.message}`, 'error');
-                } finally {
-                    setIsCampaignRunning(false);
-                    setCampaignProgress({ sent: 0, total: 0, current: '' });
+                    successCount++;
+                    
+                    // Delay entre envios (proteção anti-ban)
+                    if (i < targets.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, campaignDelay * 1000));
+                    }
+                    
+                } catch (sendError) {
+                    console.error(`Erro ao enviar para ${targetName}:`, sendError);
+                    // Continua mesmo com erro individual
                 }
+            }
+
+            // Salva no histórico
+            const campaign = {
+                id: Date.now(),
+                date: new Date().toLocaleString('pt-BR'),
+                type: campaignMode,
+                targetCount: successCount,
+                message: campaignMessage.substring(0, 50) + '...',
+                status: 'completed'
             };
 
+            setCampaignHistory(prev => [campaign, ...prev]);
+            showToast(`Campanha concluída! ${successCount}/${targets.length} mensagens enviadas.`, 'success');
+            
+            // Limpa seleções
+            setCampaignMessage('');
+            setSelectedGroupsForCampaign([]);
+            setSelectedContactsForCampaign([]);
+            
+        } catch (e) {
+            showToast(`Erro crítico: ${e.message}`, 'error');
+            console.error('Erro na campanha:', e);
+        } finally {
+            setIsCampaignRunning(false);
+            setCampaignProgress({ sent: 0, total: 0, current: '' });
+        }
+    };
             const toggleGroupSelection = (groupId) => {
                 setSelectedGroupsForCampaign(prev =>
                     prev.includes(groupId)
