@@ -1224,54 +1224,57 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
 
             // --- FIM FUNÇÕES FINANCEIRAS ---
 
-    // ===== FUNÇÕES DE CAMPANHA CORRIGIDAS =====
-    
-const API_BASE_URL = "http://localhost:3000"; // Mude para seu domínio se estiver online
+// ===== FUNÇÕES DE CAMPANHA CORRIGIDAS =====
 
-// CORREÇÃO 1: Extrair grupos reais
+const API_BASE_URL = "http://localhost:3000"; // Certifique-se que o Node está rodando nesta porta
+
+// CORREÇÃO 1: Extrair grupos reais do WhatsApp via backend
 const extractWhatsAppGroups = async (userId) => {
-    const finalId = (typeof userId === 'object') ? userId?.uid : userId;
-    if (!finalId || finalId.includes('[object')) return showToast("ID Inválido", "error");
+    // Blindagem total contra o erro de [object Object]
+    const finalId = (typeof userId === 'string' && !userId.includes('[object')) ? userId : user?.id;
 
-    try {
-        setIsProcessing(true);
-        const response = await fetch(`${API_BASE_URL}/api/whatsapp/groups/${finalId}`);
-        if (!response.ok) throw new Error('Bot offline');
-        
-        const data = await response.json();
-        setCampaignGroups(data); // O backend já manda o array direto
-        showToast(`${data.length} grupos extraídos!`, 'success');
-    } catch (e) {
-        showToast(e.message, 'error');
-    } finally {
-        setIsProcessing(false);
-    }
-};
-
-// CORREÇÃO 2: Extrair contatos reais
-const extractWhatsAppContacts = async (userId) => {
-    const finalId = (typeof userId === 'object' && userId !== null) ? userId.uid : userId;
-
-    if (!finalId || typeof finalId !== 'string' || finalId.includes('[object')) {
-        showToast("Erro: ID de usuário inválido para contatos.", "error");
+    if (!finalId) {
+        showToast("Erro: Usuário não identificado. O Bot está conectado?", "error");
         return;
     }
 
     try {
         setIsProcessing(true);
-        const response = await fetch(`/api/whatsapp/contacts/${finalId}`);
+        // Busca grupos do servidor Node
+        const response = await fetch(`${API_BASE_URL}/api/whatsapp/groups/${finalId}`);
         
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Falha ao buscar contatos');
-        }
+        if (!response.ok) throw new Error('Falha ao buscar grupos. O Bot está online?');
         
         const data = await response.json();
-        const contactsFound = Array.isArray(data) ? data : [];
         
-        setCampaignContacts(contactsFound);
-        showToast(`${contactsFound.length} contatos extraídos!`, 'success');
+        // No backend corrigido, 'data' já é o array de grupos [{id, name}, ...]
+        setCampaignGroups(data);
+        showToast(`${data.length} grupos extraídos com sucesso!`, 'success');
+    } catch (e) {
+        showToast(`Erro: ${e.message}`, 'error');
+        setCampaignGroups([]);
+    } finally {
+        setIsProcessing(false);
+    }
+};
+
+// CORREÇÃO 2: Extrair contatos (Usa a mesma lógica de segurança)
+const extractWhatsAppContacts = async (userId) => {
+    const finalId = (typeof userId === 'string' && !userId.includes('[object')) ? userId : user?.id;
+
+    if (!finalId) {
+        showToast("Erro: ID de usuário inválido.", "error");
+        return;
+    }
+
+    try {
+        setIsProcessing(true);
+        const response = await fetch(`${API_BASE_URL}/api/whatsapp/contacts/${finalId}`);
+        if (!response.ok) throw new Error('Falha ao buscar contatos');
         
+        const data = await response.json();
+        setCampaignContacts(data);
+        showToast(`${data.length} contatos encontrados!`, 'success');
     } catch (e) {
         showToast(`Erro: ${e.message}`, 'error');
         setCampaignContacts([]);
@@ -1279,124 +1282,103 @@ const extractWhatsAppContacts = async (userId) => {
         setIsProcessing(false);
     }
 };
-    // CORREÇÃO 3: Envio REAL de campanha via Firebase (igual ao sistema de clientes)
-    const startCampaign = async () => {
-        if (!campaignMessage.trim()) {
-            showToast('Digite uma mensagem antes de iniciar!', 'error');
-            return;
-        }
 
-        const targets = campaignMode === 'groups' ? selectedGroupsForCampaign : selectedContactsForCampaign;
-        if (targets.length === 0) {
-            showToast('Selecione pelo menos um alvo!', 'error');
-            return;
-        }
+// CORREÇÃO 3: Envio REAL de campanha (Totalmente alinhado com a Cobrança Automática)
+const startCampaign = async () => {
+    if (!campaignMessage.trim()) {
+        showToast('Digite uma mensagem antes de iniciar!', 'error');
+        return;
+    }
 
-        // Verifica se o bot está conectado
-        if (botSession?.status !== 'connected') {
-            showToast('Bot WhatsApp não está conectado! Conecte primeiro em Configurações > Bot WhatsApp', 'error');
-            return;
-        }
+    // Pega os objetos selecionados (contatos ou grupos)
+    const targets = campaignMode === 'groups' ? selectedGroupsForCampaign : selectedContactsForCampaign;
+    
+    if (targets.length === 0) {
+        showToast('Selecione pelo menos um alvo!', 'error');
+        return;
+    }
 
-        setIsCampaignRunning(true);
-        setCampaignProgress({ sent: 0, total: targets.length, current: '' });
+    if (botSession?.status !== 'connected') {
+        showToast('O Bot precisa estar conectado para disparar a campanha!', 'error');
+        return;
+    }
 
-        try {
-            let successCount = 0;
+    setIsCampaignRunning(true);
+    setCampaignProgress({ sent: 0, total: targets.length, current: '' });
+
+    try {
+        let successCount = 0;
+        
+        // Loop de envio que joga as mensagens na fila do Firebase
+        for (let i = 0; i < targets.length; i++) {
+            const target = targets[i];
+            const targetName = target.name || target.subject || 'Destinatário';
             
-            for (let i = 0; i < targets.length; i++) {
-                const target = targets[i];
-                const targetName = target.name || target.phone || 'Desconhecido';
-                
-                setCampaignProgress(prev => ({
-                    ...prev,
-                    sent: i + 1,
-                    current: targetName
-                }));
+            setCampaignProgress(prev => ({
+                ...prev,
+                sent: i + 1,
+                current: targetName
+            }));
 
-                try {
-                    // ENVIO REAL via Firebase (mesma lógica do sendBotMessageFromModal)
-                    let phoneNumber = '';
-                    
-                    if (campaignMode === 'groups') {
-                        // Para grupos, usa o ID do grupo diretamente
-                        phoneNumber = target.id; // Ex: "123456789@g.us"
-                    } else {
-                        // Para contatos, formata o número
-                        phoneNumber = target.phone.replace(/\D/g, '');
-                        if (!phoneNumber.startsWith('55')) phoneNumber = '55' + phoneNumber;
-                        phoneNumber = phoneNumber + '@s.whatsapp.net';
-                    }
+            // Identifica se o alvo é grupo (@g.us) ou contato individual (@s.whatsapp.net)
+            // Se o ID já vier do backend (grupos), usamos ele direto.
+            let jid = target.id; 
 
-                    // Adiciona mensagem na fila do bot (FIREBASE)
-                    await addDoc(
-                        collection(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'public', 'bot_messages'),
-                        {
-                            to: phoneNumber,
-                            body: campaignMessage,
-                            status: 'pending',
-                            createdAt: serverTimestamp(),
-                            campaignId: Date.now(), // Identificador da campanha
-                            targetName: targetName
-                        }
-                    );
-
-                    successCount++;
-                    
-                    // Delay entre envios (proteção anti-ban)
-                    if (i < targets.length - 1) {
-                        await new Promise(resolve => setTimeout(resolve, campaignDelay * 1000));
-                    }
-                    
-                } catch (sendError) {
-                    console.error(`Erro ao enviar para ${targetName}:`, sendError);
-                    // Continua mesmo com erro individual
-                }
+            // Se for contato manual e não tiver o sufixo, a gente formata
+            if (!jid.includes('@')) {
+                let num = jid.replace(/\D/g, '');
+                if (!num.startsWith('55')) num = '55' + num;
+                jid = num + '@s.whatsapp.net';
             }
 
-            // Salva no histórico
-            const campaign = {
-                id: Date.now(),
-                date: new Date().toLocaleString('pt-BR'),
-                type: campaignMode,
-                targetCount: successCount,
-                message: campaignMessage.substring(0, 50) + '...',
-                status: 'completed'
-            };
+            // ESCREVE NA MESMA FILA QUE A COBRANÇA USA
+            // O seu AAS.txt já vigia essa coleção 'bot_messages'
+            await addDoc(
+                collection(db, 'artifacts', appId, 'users', user.id, 'bot_connection', 'public', 'bot_messages'),
+                {
+                    to: jid,
+                    body: campaignMessage,
+                    status: 'pending',
+                    createdAt: serverTimestamp(),
+                    campaignId: Date.now() // Diferencial para logs
+                }
+            );
 
-            setCampaignHistory(prev => [campaign, ...prev]);
-            showToast(`Campanha concluída! ${successCount}/${targets.length} mensagens enviadas.`, 'success');
+            successCount++;
             
-            // Limpa seleções
-            setCampaignMessage('');
-            setSelectedGroupsForCampaign([]);
-            setSelectedContactsForCampaign([]);
-            
-        } catch (e) {
-            showToast(`Erro crítico: ${e.message}`, 'error');
-            console.error('Erro na campanha:', e);
-        } finally {
-            setIsCampaignRunning(false);
-            setCampaignProgress({ sent: 0, total: 0, current: '' });
+            // Delay entre inserções no Firebase para controle do navegador
+            if (i < targets.length - 1) {
+                const delayMs = (campaignDelay || 3) * 1000;
+                await new Promise(res => setTimeout(res, delayMs));
+            }
         }
-    };
-            const toggleGroupSelection = (groupId) => {
-                setSelectedGroupsForCampaign(prev =>
-                    prev.includes(groupId)
-                        ? prev.filter(id => id !== groupId)
-                        : [...prev, groupId]
-                );
-            };
 
-            const toggleContactSelection = (contactId) => {
-                setSelectedContactsForCampaign(prev =>
-                    prev.includes(contactId)
-                        ? prev.filter(id => id !== contactId)
-                        : [...prev, contactId]
-                );
-            };
+        // Registra no histórico local para o usuário ver
+        const historyItem = {
+            id: Date.now(),
+            date: new Date().toLocaleString('pt-BR'),
+            type: campaignMode,
+            targetCount: successCount,
+            message: campaignMessage.substring(0, 40) + '...',
+            status: 'completed'
+        };
 
-            // --- FIM FUNÇÕES DE CAMPANHAS ---
+        setCampaignHistory(prev => [historyItem, ...prev]);
+        showToast(`Campanha concluída! ${successCount} mensagens enviadas para a fila.`, 'success');
+        
+        // Limpa tudo após o sucesso
+        setCampaignMessage('');
+        setSelectedGroupsForCampaign([]);
+        setSelectedContactsForCampaign([]);
+        
+    } catch (e) {
+        showToast(`Erro crítico na campanha: ${e.message}`, 'error');
+        console.error('Erro:', e);
+    } finally {
+        setIsCampaignRunning(false);
+        setCampaignProgress({ sent: 0, total: 0, current: '' });
+    }
+};
 
             const addLog = (msg) => { const time = new Date().toLocaleTimeString(); setClientLog(prev => [`[${time}] ${msg}`, ...prev].slice(0, 50)); };
            const handleBotAction = async (action) => {
