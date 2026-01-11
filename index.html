@@ -1226,35 +1226,38 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
 
     // ===== FUNÇÕES DE CAMPANHA CORRIGIDAS =====
     
-    // CORREÇÃO 1: Extrair grupos reais do WhatsApp via backend
+   // CORREÇÃO 1: Extrair grupos reais do WhatsApp via backend
 const extractWhatsAppGroups = async (userId) => {
-    if (!userId || typeof userId !== 'string') {
-        showToast("Erro: ID de usuário inválido para extração.", "error");
+    // Garante que temos um ID de texto. Se vier objeto, tenta pegar o .uid
+    const finalId = (typeof userId === 'object' && userId !== null) ? userId.uid : userId;
+
+    if (!finalId || typeof finalId !== 'string' || finalId.includes('[object')) {
+        showToast("Erro: ID de usuário inválido. O Bot está inicializado?", "error");
+        console.error("ID Recebido:", userId);
         return;
     }
 
     try {
         setIsProcessing(true);
         
-        // Busca grupos do backend Node.js
-        const response = await fetch(`/api/whatsapp/groups/${userId}`);
+        // Chamada para a rota que criamos no index.js
+        const response = await fetch(`/api/whatsapp/groups/${finalId}`);
         
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error || 'Falha ao buscar grupos');
+            throw new Error(errorData.error || 'Bot desconectado ou falha na API');
         }
         
         const data = await response.json();
         
-        // O backend retorna um array direto: [ {id, subject}, ... ]
-        // Ajustamos para garantir que seja um array
-        const groupsFound = Array.isArray(data) ? data : (data.groups || []);
+        // No index.js, retornamos res.json(groups), que é um array direto
+        const groupsFound = Array.isArray(data) ? data : [];
         
         setCampaignGroups(groupsFound);
         showToast(`${groupsFound.length} grupos extraídos com sucesso!`, 'success');
         
     } catch (e) {
-        showToast(`Erro: ${e.message}. Certifique-se de que o bot está conectado.`, 'error');
+        showToast(`Erro: ${e.message}`, 'error');
         setCampaignGroups([]);
     } finally {
         setIsProcessing(false);
@@ -1263,15 +1266,16 @@ const extractWhatsAppGroups = async (userId) => {
 
 // CORREÇÃO 2: Extrair contatos reais
 const extractWhatsAppContacts = async (userId) => {
-    if (!userId || typeof userId !== 'string') {
-        showToast("Erro: ID de usuário inválido para extração.", "error");
+    const finalId = (typeof userId === 'object' && userId !== null) ? userId.uid : userId;
+
+    if (!finalId || typeof finalId !== 'string' || finalId.includes('[object')) {
+        showToast("Erro: ID de usuário inválido para contatos.", "error");
         return;
     }
 
     try {
         setIsProcessing(true);
-        
-        const response = await fetch(`/api/whatsapp/contacts/${userId}`);
+        const response = await fetch(`/api/whatsapp/contacts/${finalId}`);
         
         if (!response.ok) {
             const errorData = await response.json();
@@ -1279,9 +1283,7 @@ const extractWhatsAppContacts = async (userId) => {
         }
         
         const data = await response.json();
-        
-        // O backend retorna um array direto
-        const contactsFound = Array.isArray(data) ? data : (data.contacts || []);
+        const contactsFound = Array.isArray(data) ? data : [];
         
         setCampaignContacts(contactsFound);
         showToast(`${contactsFound.length} contatos extraídos!`, 'success');
