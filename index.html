@@ -148,14 +148,14 @@
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification, updatePassword, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
         import { getFirestore, collection, addDoc, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, getDocs, setDoc, writeBatch } from 'firebase/firestore';
         
- import { 
+        import { 
             Users, LayoutDashboard, LogOut, Plus, Search, UserPlus, Shield, 
             Trash2, Edit, CheckCircle, XCircle, Calendar, Zap, TrendingUp, TrendingDown,
             Smartphone, Settings, RefreshCw, MessageCircle, AlertTriangle, 
             DollarSign, Lock, Eye, EyeOff, Clock, Ban, Save, FileText, Info, 
             Sparkles, BarChart, ArrowLeft, Send, Mail, Key, 
             ChevronRight, Wallet, QrCode, Wifi, WifiOff, Menu, X, User,
-            Megaphone, Bot, LifeBuoy, PieChart, Loader2 
+            Megaphone, Bot, LifeBuoy, PieChart, Loader2
         } from 'lucide-react';
 
         // --- ERROR BOUNDARY ---
@@ -1013,124 +1013,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
         ];
 
 
-
-// --- TELA DE CAMPANHA (CORRIGIDA) ---
-    const CampaignView = ({ user }) => {
-        const [groups, setGroups] = useState([]);
-        const [selectedGroup, setSelectedGroup] = useState('');
-        const [message, setMessage] = useState('');
-        const [minDelay, setMinDelay] = useState(20);
-        const [maxDelay, setMaxDelay] = useState(60);
-        const [loading, setLoading] = useState(false);
-        const [statusLog, setStatusLog] = useState('');
-
-        // --- LINHA QUE FALTAVA (SEM ELA DÁ TELA BRANCA) ---
-        const isHttps = window.location.protocol === 'https:';
-
-        // --- CORREÇÃO DEFINITIVA (USANDO PROXY) ---
-        // Deixe vazio. O Nginx vai redirecionar automaticamente.
-        const BOT_URL = '';
-
-const loadGroups = async () => {
-    // 1. Tenta pegar o ID da variável, se não tiver, tenta pegar direto do Firebase
-    const currentUser = user || (window.firebase && firebase.auth().currentUser);
-    const uid = currentUser ? currentUser.uid : null;
-
-    if (!uid) {
-        alert("Ops! Seu login ainda não foi identificado. Aguarde um segundo e tente novamente.");
-        console.error("UID está undefined. Verifique se o usuário está logado.");
-        return;
-    }
-
-    setLoading(true);
-    setStatusLog("📡 Conectando ao Bot...");
-
-    try {
-        // ✅ Agora a URL terá o ID correto em vez de 'undefined'
-        const res = await fetch(`${BOT_URL}/api/groups/${uid}`);
-        
-        if (!res.ok) {
-            const errorData = await res.json();
-            throw new Error(errorData.error || 'Erro na comunicação');
-        }
-
-        const data = await res.json();
-        
-        if (data.success) {
-            setGroups(data.groups);
-            setStatusLog(`✅ ${data.groups.length} grupos carregados.`);
-        } else {
-            setStatusLog(`❌ Erro: ${data.error}`);
-        }
-    } catch (e) {
-        console.error(e);
-        // Se cair aqui, ele mostra a mensagem de "Aguarde 10 segundos" do bot
-        setStatusLog(`⚠️ ${e.message}`);
-    }
-    setLoading(false);
-};
-
-        const startCampaign = async () => {
-            if(!selectedGroup || !message) return alert("Preencha tudo!");
-            if(!confirm("⚠️ Iniciar disparos?")) return;
-            
-            setLoading(true);
-            setStatusLog("🚀 Enviando comando...");
-            
-            try {
-                const res = await fetch(`${BOT_URL}/api/broadcast-group`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        userId: user.uid, groupId: selectedGroup, message,
-                        minDelay: Number(minDelay), maxDelay: Number(maxDelay)
-                    })
-                });
-                const data = await res.json();
-                if(data.success) setStatusLog("✅ Campanha iniciada com sucesso!");
-                else setStatusLog(`❌ Erro: ${data.error}`);
-            } catch(e) { setStatusLog(`❌ Erro: ${e.message}`); }
-            setLoading(false);
-        };
-
-        return (
-            <div className="space-y-6 pb-20 animate-fade-in">
-                <div className="bg-gradient-to-r from-pink-600 to-purple-600 p-6 rounded-2xl shadow-lg">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                        <Megaphone className="text-white"/> Campanha em Grupo
-                    </h2>
-                    <p className="text-pink-100 text-sm">Disparo em massa para membros.</p>
-                </div>
-
-                <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
-                    <button onClick={loadGroups} disabled={loading} className="w-full bg-slate-700 text-white py-3 rounded-lg mb-4 hover:bg-slate-600 flex justify-center items-center gap-2">
-                        {loading ? <Loader2 className="animate-spin"/> : <RefreshCw/>} Carregar Grupos
-                    </button>
-
-                    {groups.length > 0 && (
-                        <select className="w-full bg-slate-900 text-white p-3 rounded-lg border border-slate-600 mb-4" value={selectedGroup} onChange={e=>setSelectedGroup(e.target.value)}>
-                            <option value="">Selecione o Grupo...</option>
-                            {groups.map(g => <option key={g.id} value={g.id}>{g.name} ({g.participants} membros)</option>)}
-                        </select>
-                    )}
-
-                    <textarea className="w-full h-32 bg-slate-900 text-white p-3 rounded-lg border border-slate-600 mb-4" placeholder="Mensagem..." value={message} onChange={e=>setMessage(e.target.value)}></textarea>
-
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div><label className="text-slate-400 text-xs">Min (s)</label><input type="number" className="w-full bg-slate-900 text-white p-2 rounded border border-slate-600" value={minDelay} onChange={e=>setMinDelay(e.target.value)}/></div>
-                        <div><label className="text-slate-400 text-xs">Max (s)</label><input type="number" className="w-full bg-slate-900 text-white p-2 rounded border border-slate-600" value={maxDelay} onChange={e=>setMaxDelay(e.target.value)}/></div>
-                    </div>
-
-                    {statusLog && <div className="p-3 bg-slate-900 rounded text-center text-sm font-bold text-yellow-400 mb-4 whitespace-pre-wrap">{statusLog}</div>}
-
-                    <button onClick={startCampaign} disabled={loading} className="w-full bg-pink-600 hover:bg-pink-700 text-white py-3 rounded font-bold flex justify-center gap-2">
-                        {loading ? <Loader2 className="animate-spin"/> : <Send/>} INICIAR
-                    </button>
-                </div>
-            </div>
-        );
-    };
-            const FireTVManager = () => {
+        const FireTVManager = () => {
             const [user, setUser] = useState(null);
             const [view, setView] = useState('landing');
             const [activeTab, setActiveTab] = useState('dashboard');
@@ -1921,7 +1804,6 @@ const loadGroups = async () => {
                                     <div><h1 className="text-2xl md:text-3xl font-bold text-white">{activeTab === 'dashboard' ? 'Visão Geral' : activeTab === 'clients' ? 'Meus Clientes' : activeTab === 'financial' ? 'Controle Financeiro' : 'Gestão de Equipe'}</h1></div>
                                     <div className="flex items-center gap-2">
                                         {activeTab === 'clients' && <button onClick={() => setIsImportModalOpen(true)} className="bg-slate-800 px-4 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm"><FileText size={18} />  Exportar / Importar</button>}
-{activeTab === 'campaign' && <CampaignView user={user} />}
                                         {/* BOTÃO PARA FINANCEIRO */}
                                         {activeTab === 'financial' && <button onClick={() => { setIsTransactionModalOpen(true); setEditingItem(null); setTransactionFormData({ description: '', amount: '', type: 'income', date: new Date().toISOString().split('T')[0], category: 'Mensalidade' }); }} className="bg-green-600 px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm hover:bg-green-500"><Plus size={20} /> Nova Transação</button>}
                                         {canAdd && activeTab !== 'financial' && <button onClick={() => { setModalType(activeTab === 'clients' ? 'client' : 'user'); setIsAddModalOpen(true); }} className="bg-orange-600 px-5 py-2.5 rounded-xl flex items-center gap-2 font-bold text-sm"><Plus size={20} /> Novo</button>}
@@ -2197,17 +2079,6 @@ const loadGroups = async () => {
                                         <div className="space-y-6">
                                             <h2 className="text-xl md:text-2xl font-bold text-white mb-6">Configurações</h2>
                                             <div className="grid md:grid-cols-3 gap-4">
-{/* OPÇÃO 5: CAMPANHA EM GRUPO */}
-<button
-  onClick={() => setActiveTab('campaign')}
-  className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-pink-500 text-left"
->
-  <Megaphone className="text-pink-500 mb-4" size={32}/>
-  <h3 className="font-bold text-lg text-white">Campanha em Grupo</h3>
-  <p className="text-sm text-slate-400">
-    Disparo em massa para grupos.
-  </p>
-</button>
                                                 {/* OPÇÃO 1: BOT WHATSAPP */}
                                                 <button onClick={()=>setSettingsView('bot')} className="bg-slate-900 border border-slate-800 p-6 rounded-2xl hover:border-green-500 text-left">
                                                     <QrCode className="text-green-500 mb-4" size={32}/><h3 className="font-bold text-lg text-white">Bot WhatsApp</h3><p className="text-sm text-slate-400">Conectar.</p>
