@@ -1014,7 +1014,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
 
 
 
-// --- TELA DE CAMPANHA EM GRUPO (FORÇANDO HTTP) ---
+// --- TELA DE CAMPANHA (VERSÃO BLINDADA CONTRA ERRO DE HTTPS) ---
     const CampaignView = ({ user }) => {
         const [groups, setGroups] = useState([]);
         const [selectedGroup, setSelectedGroup] = useState('');
@@ -1024,20 +1024,19 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
         const [loading, setLoading] = useState(false);
         const [statusLog, setStatusLog] = useState('');
 
-        // --- CORREÇÃO: FORÇANDO HTTP ---
-        // Pega o domínio (firegestor.top) mas FORÇA usar http://
-        const hostname = window.location.hostname || 'localhost';
-        const BOT_URL = `http://${hostname}:3000`;
+        // Tenta detectar o problema de HTTPS vs HTTP
+        const isHttps = window.location.protocol === 'https:';
+        const hostname = window.location.hostname;
+        const BOT_URL = `http://${hostname}:3000`; // Bot é sempre HTTP
 
         const loadGroups = async () => {
             if(!user) return;
             setLoading(true);
             try {
                 const res = await fetch(`${BOT_URL}/api/groups/${user.uid}`);
-                
                 if (!res.ok) throw new Error('Falha na conexão');
-                
                 const data = await res.json();
+                
                 if(data.success) {
                     setGroups(data.groups);
                     setStatusLog(`✅ ${data.groups.length} grupos carregados.`);
@@ -1046,7 +1045,12 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                 }
             } catch(e) { 
                 console.error(e);
-                setStatusLog(`❌ Não conectou em ${BOT_URL}. Verifique se acessou o painel por HTTP (sem S).`); 
+                // AQUI ESTÁ A MENSAGEM INTELIGENTE PARA VOCÊ
+                if (isHttps) {
+                    setStatusLog(`⚠️ BLOQUEIO DE SEGURANÇA DETECTADO! \nSeu site está em HTTPS mas o bot é HTTP. \nClique no cadeado 🔒 lá em cima > Configurações do Site > Conteúdo Inseguro > PERMITIR.`);
+                } else {
+                    setStatusLog(`❌ Não conectou em ${BOT_URL}. Verifique se o Bot está ligado (pm2 list).`); 
+                }
             }
             setLoading(false);
         };
@@ -1083,6 +1087,13 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                     <p className="text-pink-100 text-sm">Disparo em massa para membros.</p>
                 </div>
 
+                {/* AVISO VISUAL SE ESTIVER EM HTTPS */}
+                {isHttps && (
+                    <div className="bg-yellow-900/50 border border-yellow-600 text-yellow-200 p-3 rounded-lg text-xs">
+                        ⚠️ Você está usando HTTPS. Se o botão falhar, você precisa liberar "Conteúdo Inseguro" no cadeado do navegador.
+                    </div>
+                )}
+
                 <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700">
                     <button onClick={loadGroups} disabled={loading} className="w-full bg-slate-700 text-white py-3 rounded-lg mb-4 hover:bg-slate-600 flex justify-center items-center gap-2">
                         {loading ? <Loader2 className="animate-spin"/> : <RefreshCw/>} Carregar Grupos
@@ -1102,7 +1113,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
                         <div><label className="text-slate-400 text-xs">Max (s)</label><input type="number" className="w-full bg-slate-900 text-white p-2 rounded border border-slate-600" value={maxDelay} onChange={e=>setMaxDelay(e.target.value)}/></div>
                     </div>
 
-                    {statusLog && <div className="p-3 bg-slate-900 rounded text-center text-sm font-bold text-yellow-400 mb-4">{statusLog}</div>}
+                    {statusLog && <div className="p-3 bg-slate-900 rounded text-center text-sm font-bold text-yellow-400 mb-4 whitespace-pre-wrap">{statusLog}</div>}
 
                     <button onClick={startCampaign} disabled={loading} className="w-full bg-pink-600 hover:bg-pink-700 text-white py-3 rounded font-bold flex justify-center gap-2">
                         {loading ? <Loader2 className="animate-spin"/> : <Send/>} INICIAR
@@ -1111,7 +1122,7 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
             </div>
         );
     };
-        const FireTVManager = () => {
+            const FireTVManager = () => {
             const [user, setUser] = useState(null);
             const [view, setView] = useState('landing');
             const [activeTab, setActiveTab] = useState('dashboard');
