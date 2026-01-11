@@ -1226,39 +1226,23 @@ const ImportExportModal = ({ isOpen, onClose, clients, user, showToast, isProces
 
     // ===== FUNÇÕES DE CAMPANHA CORRIGIDAS =====
     
-   // CORREÇÃO 1: Extrair grupos reais do WhatsApp via backend
-const extractWhatsAppGroups = async (userId) => {
-    // Garante que temos um ID de texto. Se vier objeto, tenta pegar o .uid
-    const finalId = (typeof userId === 'object' && userId !== null) ? userId.uid : userId;
+const API_BASE_URL = "http://localhost:3000"; // Mude para seu domínio se estiver online
 
-    if (!finalId || typeof finalId !== 'string' || finalId.includes('[object')) {
-        showToast("Erro: ID de usuário inválido. O Bot está inicializado?", "error");
-        console.error("ID Recebido:", userId);
-        return;
-    }
+// CORREÇÃO 1: Extrair grupos reais
+const extractWhatsAppGroups = async (userId) => {
+    const finalId = (typeof userId === 'object') ? userId?.uid : userId;
+    if (!finalId || finalId.includes('[object')) return showToast("ID Inválido", "error");
 
     try {
         setIsProcessing(true);
-        
-        // Chamada para a rota que criamos no index.js
-        const response = await fetch(`/api/whatsapp/groups/${finalId}`);
-        
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Bot desconectado ou falha na API');
-        }
+        const response = await fetch(`${API_BASE_URL}/api/whatsapp/groups/${finalId}`);
+        if (!response.ok) throw new Error('Bot offline');
         
         const data = await response.json();
-        
-        // No index.js, retornamos res.json(groups), que é um array direto
-        const groupsFound = Array.isArray(data) ? data : [];
-        
-        setCampaignGroups(groupsFound);
-        showToast(`${groupsFound.length} grupos extraídos com sucesso!`, 'success');
-        
+        setCampaignGroups(data); // O backend já manda o array direto
+        showToast(`${data.length} grupos extraídos!`, 'success');
     } catch (e) {
-        showToast(`Erro: ${e.message}`, 'error');
-        setCampaignGroups([]);
+        showToast(e.message, 'error');
     } finally {
         setIsProcessing(false);
     }
